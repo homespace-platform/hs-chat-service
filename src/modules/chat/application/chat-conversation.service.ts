@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
+import { Types, type Model } from 'mongoose';
 import {
   buildParticipantKey,
   DIRECT_CONVERSATION_LISTING_ID,
@@ -92,7 +92,7 @@ export class ChatConversationService {
     conversationId: string,
     currentUserId: string,
   ): Promise<ConversationDocument> {
-    if (!conversationId) {
+    if (!conversationId || !Types.ObjectId.isValid(conversationId)) {
       throw new NotFoundException('Conversation not found');
     }
 

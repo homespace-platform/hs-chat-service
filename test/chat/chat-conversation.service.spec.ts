@@ -73,4 +73,11 @@ describe('ChatConversationService', () => {
       service.getParticipantOrThrow('conversation-id', 'user-c'),
     ).rejects.toThrow(NotFoundException);
   });
+
+  it('returns not found for an invalid Mongo conversation id', async () => {
+    await expect(
+      service.getParticipantOrThrow('not-an-object-id', 'user-a'),
+    ).rejects.toThrow(NotFoundException);
+    expect(conversationModel.findOne).not.toHaveBeenCalled();
+  });
 });
