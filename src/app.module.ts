@@ -5,6 +5,7 @@ import { validateEnvironment } from './config/environment.validation';
 import { AuthenticationModule } from './modules/authentication/authentication.module';
 import { HealthModule } from './modules/health/health.module';
 import { EurekaModule } from './infrastructure/discovery/eureka.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { EurekaModule } from './infrastructure/discovery/eureka.module';
     EurekaModule,
     HealthModule,
     AuthenticationModule,
+    ChatModule,
   ],
 })
 export class AppModule {}
