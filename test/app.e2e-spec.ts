@@ -5,14 +5,34 @@ import { App } from 'supertest/types';
 import { HealthController } from '../src/modules/health/presentation/health.controller';
 import { AuthenticationController } from '../src/modules/authentication/presentation/authentication.controller';
 import { GatewayAuthenticationGuard } from '../src/modules/authentication/presentation/guards/gateway-authentication.guard';
+import { ChatController } from '../src/modules/chat/presentation/chat.controller';
+import { ChatConversationService } from '../src/modules/chat/application/chat-conversation.service';
+import { ChatMessageService } from '../src/modules/chat/application/chat-message.service';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [HealthController, AuthenticationController],
-      providers: [GatewayAuthenticationGuard],
+      controllers: [HealthController, AuthenticationController, ChatController],
+      providers: [
+        GatewayAuthenticationGuard,
+        {
+          provide: ChatConversationService,
+          useValue: {
+            listConversations: async () => [],
+            createOrReuseConversation: async () => ({}),
+          },
+        },
+        {
+          provide: ChatMessageService,
+          useValue: {
+            listMessages: async () => ({ items: [] }),
+            sendMessage: async () => ({}),
+            markRead: async () => ({}),
+          },
+        },
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
@@ -44,6 +64,18 @@ describe('AppController (e2e)', () => {
           authorities: ['CHAT_READ', 'CHAT_WRITE'],
         },
       });
+  });
+
+  it('/conversations (GET) rejects a request without gateway identity', () => {
+    return request(app.getHttpServer()).get('/conversations').expect(401);
+  });
+
+  it('/conversations (GET) returns the authenticated user conversations', () => {
+    return request(app.getHttpServer())
+      .get('/conversations')
+      .set('X-User-Id', 'user-123')
+      .expect(200)
+      .expect({ code: 1000, result: [] });
   });
 
   afterEach(async () => {

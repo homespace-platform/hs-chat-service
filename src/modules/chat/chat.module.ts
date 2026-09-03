@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { GatewayAuthenticationGuard } from '../authentication/presentation/guards/gateway-authentication.guard';
+import { ChatConversationService } from './application/chat-conversation.service';
+import { ChatMessageService } from './application/chat-message.service';
+import { ChatController } from './presentation/chat.controller';
 import {
   Conversation,
   ConversationSchema,
@@ -17,7 +20,12 @@ import {
       { name: Message.name, schema: MessageSchema },
     ]),
   ],
-  providers: [GatewayAuthenticationGuard],
+  controllers: [ChatController],
+  providers: [
+    GatewayAuthenticationGuard,
+    ChatConversationService,
+    ChatMessageService,
+  ],
   exports: [MongooseModule],
 })
 export class ChatModule {}
