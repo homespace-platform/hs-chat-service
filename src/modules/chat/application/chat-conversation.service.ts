@@ -13,6 +13,7 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import type { RelatedListingDto } from './dto/related-listing.dto';
 import type { ConversationView } from '../domain/chat-views';
 import type { RelatedListingSnapshot } from '../domain/related-listing-snapshot';
+import type { ParticipantProfileSnapshot } from '../domain/participant-profile-snapshot';
 import {
   Conversation,
   type ConversationDocument,
@@ -42,6 +43,26 @@ export class ChatConversationService {
     const filter = { participantKey, listingId };
     const existing = await this.conversationModel.findOne(filter).exec();
     if (existing) {
+      if (input.participantProfile) {
+        const participantProfile = this.toParticipantProfile(
+          input.participantProfile,
+        );
+        await this.conversationModel
+          .updateOne(
+            { _id: existing._id },
+            {
+              $set: {
+                [`participantProfiles.${input.participantId}`]:
+                  participantProfile,
+              },
+            },
+          )
+          .exec();
+        existing.participantProfiles = {
+          ...existing.participantProfiles,
+          [input.participantId]: participantProfile,
+        };
+      }
       return this.toView(existing, currentUserId);
     }
 
@@ -59,6 +80,13 @@ export class ChatConversationService {
           [currentUserId]: 0,
           [input.participantId]: 0,
         },
+        participantProfiles: input.participantProfile
+          ? {
+              [input.participantId]: this.toParticipantProfile(
+                input.participantProfile,
+              ),
+            }
+          : {},
       });
       return this.toView(created, currentUserId);
     } catch (error) {
@@ -112,10 +140,16 @@ export class ChatConversationService {
     const participantId = conversation.participantIds.find(
       (id) => id !== currentUserId,
     );
+    const profile = participantId
+      ? conversation.participantProfiles?.[participantId]
+      : undefined;
 
     return {
       id: conversation._id.toString(),
       participantId: participantId ?? '',
+      participantName: profile?.displayName,
+      participantEmail: profile?.email,
+      participantAvatar: profile?.avatarUrl,
       listing: conversation.listing,
       lastMessage: conversation.lastMessage,
       lastMessageAt: conversation.lastMessageAt,
@@ -136,6 +170,16 @@ export class ChatConversationService {
       bedrooms: listing.bedrooms,
       area: listing.area,
       verified: listing.verified,
+    };
+  }
+
+  private toParticipantProfile(
+    profile: NonNullable<CreateConversationDto['participantProfile']>,
+  ): ParticipantProfileSnapshot {
+    return {
+      displayName: profile.displayName?.trim(),
+      email: profile.email?.trim(),
+      avatarUrl: profile.avatarUrl?.trim(),
     };
   }
 

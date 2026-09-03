@@ -5,6 +5,7 @@ export interface ConversationView {
   participantId: string;
   participantName?: string;
   participantEmail?: string;
+  participantAvatar?: string;
   listing?: RelatedListingSnapshot;
   lastMessage?: string;
   lastMessageAt?: Date;

@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
-import { RelatedListingDto } from './related-listing.dto';
+import { ParticipantProfileDto, RelatedListingDto } from './related-listing.dto';
 
 export class CreateConversationDto {
   @IsString()
@@ -12,4 +12,9 @@ export class CreateConversationDto {
   @ValidateNested()
   @Type(() => RelatedListingDto)
   listing?: RelatedListingDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ParticipantProfileDto)
+  participantProfile?: ParticipantProfileDto;
 }

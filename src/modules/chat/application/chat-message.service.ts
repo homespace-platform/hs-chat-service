@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import type { MessagePage, MessageView } from '../domain/chat-views';
 import type { RelatedListingSnapshot } from '../domain/related-listing-snapshot';
+import type { ParticipantProfileSnapshot } from '../domain/participant-profile-snapshot';
 import {
   Conversation,
 } from '../infrastructure/persistence/schemas/conversation.schema';
@@ -64,6 +65,12 @@ export class ChatMessageService {
             lastMessage: content,
             lastMessageAt: createdAt,
             lastMessageSenderId: currentUserId,
+            ...(input.senderProfile
+              ? {
+                  [`participantProfiles.${currentUserId}`]:
+                    this.toParticipantProfile(input.senderProfile),
+                }
+              : {}),
           },
           $inc: { [`unreadCounts.${recipientId}`]: 1 },
         },
@@ -156,6 +163,16 @@ export class ChatMessageService {
       bedrooms: listing.bedrooms,
       area: listing.area,
       verified: listing.verified,
+    };
+  }
+
+  private toParticipantProfile(
+    profile: NonNullable<SendMessageDto['senderProfile']>,
+  ): ParticipantProfileSnapshot {
+    return {
+      displayName: profile.displayName?.trim(),
+      email: profile.email?.trim(),
+      avatarUrl: profile.avatarUrl?.trim(),
     };
   }
 }

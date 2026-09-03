@@ -61,6 +61,28 @@ describe('ChatMessageService', () => {
     expect(result.senderId).toBe('user-a');
   });
 
+  it('stores the sender profile so the recipient can render the conversation identity', async () => {
+    await service.sendMessage('user-a', 'conversation-id', {
+      content: 'Xin chào',
+      senderProfile: {
+        displayName: 'Người thuê A',
+        avatarUrl: 'https://example.com/tenant.jpg',
+      },
+    });
+
+    expect(conversationModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'conversation-id', participantIds: 'user-a' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'participantProfiles.user-a': {
+            displayName: 'Người thuê A',
+            avatarUrl: 'https://example.com/tenant.jpg',
+          },
+        }),
+      }),
+    );
+  });
+
   it('rejects empty content and blocks non-participants', async () => {
     await expect(
       service.sendMessage('user-a', 'conversation-id', { content: '  ' }),

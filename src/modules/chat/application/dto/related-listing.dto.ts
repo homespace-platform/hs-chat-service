@@ -12,6 +12,23 @@ import {
   Min,
 } from 'class-validator';
 
+export class ParticipantProfileDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  displayName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  email?: string;
+
+  @IsOptional()
+  @IsUrl({ require_tld: false, protocols: ['http', 'https'] })
+  @MaxLength(2_000)
+  avatarUrl?: string;
+}
+
 export class RelatedListingDto {
   @IsString()
   @IsNotEmpty()
