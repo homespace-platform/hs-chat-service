@@ -5,7 +5,6 @@ import type { MessagePage, MessageView } from '../domain/chat-views';
 import type { RelatedListingSnapshot } from '../domain/related-listing-snapshot';
 import {
   Conversation,
-  type ConversationDocument,
 } from '../infrastructure/persistence/schemas/conversation.schema';
 import {
   Message,
