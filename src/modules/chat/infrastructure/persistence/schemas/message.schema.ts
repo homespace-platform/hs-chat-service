@@ -30,6 +30,8 @@ export class Message {
 
   @Prop({ type: RelatedListingSchema })
   listing?: RelatedListingSnapshot;
+
+  createdAt!: Date;
 }
 
 export type MessageDocument = HydratedDocument<Message>;
