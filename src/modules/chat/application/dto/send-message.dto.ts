@@ -4,6 +4,7 @@ import {
   ParticipantProfileDto,
   RelatedListingDto,
 } from './related-listing.dto';
+import { MessageAttachmentDto } from './message-attachment.dto';
 
 export class SendMessageDto {
   @IsString()
@@ -20,4 +21,9 @@ export class SendMessageDto {
   @ValidateNested()
   @Type(() => ParticipantProfileDto)
   senderProfile?: ParticipantProfileDto;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => MessageAttachmentDto)
+  attachments?: MessageAttachmentDto[];
 }

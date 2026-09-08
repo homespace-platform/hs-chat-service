@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { Schema as MongooseSchema } from 'mongoose';
 import type { RelatedListingSnapshot } from '../../../domain/related-listing-snapshot';
+import type { ChatAttachment } from '../../../domain/chat-attachment';
 
 const RelatedListingSchema = new MongooseSchema<RelatedListingSnapshot>(
   {
@@ -13,6 +14,16 @@ const RelatedListingSchema = new MongooseSchema<RelatedListingSnapshot>(
     bedrooms: { type: Number },
     area: { type: Number },
     verified: { type: Boolean },
+  },
+  { _id: false },
+);
+
+const ChatAttachmentSchema = new MongooseSchema<ChatAttachment>(
+  {
+    storageId: { type: String, required: true },
+    fileName: { type: String, required: true },
+    contentType: { type: String, required: true },
+    sizeBytes: { type: Number, required: true },
   },
   { _id: false },
 );
@@ -30,6 +41,9 @@ export class Message {
 
   @Prop({ type: RelatedListingSchema })
   listing?: RelatedListingSnapshot;
+
+  @Prop({ type: [ChatAttachmentSchema], default: [] })
+  attachments!: ChatAttachment[];
 
   createdAt!: Date;
 }

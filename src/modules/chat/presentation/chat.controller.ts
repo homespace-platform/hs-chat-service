@@ -18,6 +18,7 @@ import { CreateConversationDto } from '../application/dto/create-conversation.dt
 import { ListConversationsDto } from '../application/dto/list-conversations.dto';
 import { ListMessagesDto } from '../application/dto/list-messages.dto';
 import { SendMessageDto } from '../application/dto/send-message.dto';
+import { UpdateParticipantRoleDto } from '../application/dto/update-participant-role.dto';
 
 @Controller('conversations')
 @UseGuards(GatewayAuthenticationGuard)
@@ -87,6 +88,20 @@ export class ChatController {
     const result = await this.messageService.markRead(
       user.userId,
       conversationId,
+    );
+    return new ApiResponseDto({ result });
+  }
+
+  @Patch(':conversationId/participant-role')
+  async updateParticipantRole(
+    @CurrentUser() user: UserContext,
+    @Param('conversationId') conversationId: string,
+    @Body() input: UpdateParticipantRoleDto,
+  ) {
+    const result = await this.conversationService.updateParticipantRole(
+      conversationId,
+      user.userId,
+      input,
     );
     return new ApiResponseDto({ result });
   }

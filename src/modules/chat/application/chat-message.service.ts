@@ -54,6 +54,7 @@ export class ChatMessageService {
       listing: input.listing
         ? this.toListingSnapshot(input.listing)
         : undefined,
+      attachments: input.attachments ?? [],
     });
     const createdAt = created.createdAt ?? new Date();
 
@@ -147,6 +148,7 @@ export class ChatMessageService {
       senderId: message.senderId,
       content: message.content,
       listing: message.listing,
+      attachments: message.attachments ?? [],
       createdAt: message.createdAt,
     };
   }

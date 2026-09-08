@@ -3,6 +3,7 @@ import { HydratedDocument, Schema as MongooseSchema } from 'mongoose';
 import { DIRECT_CONVERSATION_LISTING_ID } from '../../../application/conversation-key';
 import type { RelatedListingSnapshot } from '../../../domain/related-listing-snapshot';
 import type { ParticipantProfileSnapshot } from '../../../domain/participant-profile-snapshot';
+import type { ParticipantRole } from '../../../domain/participant-role';
 
 const RelatedListingSchema = new MongooseSchema<RelatedListingSnapshot>(
   {
@@ -46,6 +47,9 @@ export class Conversation {
 
   @Prop({ type: Object, default: {} })
   participantProfiles!: Record<string, ParticipantProfileSnapshot>;
+
+  @Prop({ type: Object, default: {} })
+  participantRoles!: Record<string, ParticipantRole>;
 }
 
 export type ConversationDocument = HydratedDocument<Conversation>;

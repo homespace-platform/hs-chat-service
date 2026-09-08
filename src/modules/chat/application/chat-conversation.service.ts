@@ -14,6 +14,8 @@ import type { RelatedListingDto } from './dto/related-listing.dto';
 import type { ConversationView } from '../domain/chat-views';
 import type { RelatedListingSnapshot } from '../domain/related-listing-snapshot';
 import type { ParticipantProfileSnapshot } from '../domain/participant-profile-snapshot';
+import type { ParticipantRole } from '../domain/participant-role';
+import type { UpdateParticipantRoleDto } from './dto/update-participant-role.dto';
 import {
   Conversation,
   type ConversationDocument,
@@ -87,6 +89,12 @@ export class ChatConversationService {
               ),
             }
           : {},
+        participantRoles: input.listing
+          ? {
+              [currentUserId]: 'TENANT' satisfies ParticipantRole,
+              [input.participantId]: 'LANDLORD' satisfies ParticipantRole,
+            }
+          : {},
       });
       return this.toView(created, currentUserId);
     } catch (error) {
@@ -133,6 +141,28 @@ export class ChatConversationService {
     return conversation as ConversationDocument;
   }
 
+  async updateParticipantRole(
+    conversationId: string,
+    currentUserId: string,
+    input: UpdateParticipantRoleDto,
+  ): Promise<ConversationView> {
+    const conversation = await this.getParticipantOrThrow(
+      conversationId,
+      currentUserId,
+    );
+    const participantId = conversation.participantIds.find(
+      (id) => id !== currentUserId,
+    );
+    if (!participantId) return this.toView(conversation, currentUserId);
+
+    conversation.participantRoles = {
+      ...(conversation.participantRoles ?? {}),
+      [participantId]: input.role,
+    };
+    await conversation.save();
+    return this.toView(conversation, currentUserId);
+  }
+
   toView(
     conversation: ConversationDocument,
     currentUserId: string,
@@ -150,6 +180,9 @@ export class ChatConversationService {
       participantName: profile?.displayName,
       participantEmail: profile?.email,
       participantAvatar: profile?.avatarUrl,
+      participantRole: participantId
+        ? conversation.participantRoles?.[participantId]
+        : undefined,
       listing: conversation.listing,
       lastMessage: conversation.lastMessage,
       lastMessageAt: conversation.lastMessageAt,

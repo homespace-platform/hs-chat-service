@@ -1,4 +1,6 @@
 import type { RelatedListingSnapshot } from './related-listing-snapshot';
+import type { ChatAttachment } from './chat-attachment';
+import type { ParticipantRole } from './participant-role';
 
 export interface ConversationView {
   id: string;
@@ -11,6 +13,7 @@ export interface ConversationView {
   lastMessageAt?: Date;
   lastMessageSenderId?: string;
   unreadCount: number;
+  participantRole?: ParticipantRole;
 }
 
 export interface MessageView {
@@ -20,6 +23,7 @@ export interface MessageView {
   content: string;
   listing?: RelatedListingSnapshot;
   createdAt: Date;
+  attachments: ChatAttachment[];
 }
 
 export interface MessagePage {
