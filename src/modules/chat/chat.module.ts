@@ -4,6 +4,7 @@ import { GatewayAuthenticationGuard } from '../authentication/presentation/guard
 import { ChatConversationService } from './application/chat-conversation.service';
 import { ChatMessageService } from './application/chat-message.service';
 import { ChatController } from './presentation/chat.controller';
+import { ChatGateway } from './presentation/chat.gateway';
 import {
   Conversation,
   ConversationSchema,
@@ -25,6 +26,7 @@ import {
     GatewayAuthenticationGuard,
     ChatConversationService,
     ChatMessageService,
+    ChatGateway,
   ],
   exports: [MongooseModule],
 })

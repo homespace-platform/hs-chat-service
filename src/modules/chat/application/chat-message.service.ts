@@ -31,10 +31,21 @@ export class ChatMessageService {
     conversationId: string,
     input: SendMessageDto,
   ): Promise<MessageView> {
-    const conversation = await this.conversationService.getParticipantOrThrow(
-      conversationId,
-      currentUserId,
-    );
+    return (
+      await this.sendRealtimeMessage(currentUserId, conversationId, input)
+    ).message;
+  }
+
+  async sendRealtimeMessage(
+    currentUserId: string,
+    conversationId: string,
+    input: SendMessageDto,
+  ): Promise<{ message: MessageView; recipientId: string }> {
+    const conversation =
+      await this.conversationService.getParticipantOrThrow(
+        conversationId,
+        currentUserId,
+      );
     const content = input.content.trim();
     if (!content) {
       throw new BadRequestException('Message content is required');
@@ -78,7 +89,7 @@ export class ChatMessageService {
       )
       .exec();
 
-    return this.toView(created);
+    return { message: this.toView(created), recipientId };
   }
 
   async listMessages(
@@ -86,11 +97,10 @@ export class ChatMessageService {
     conversationId: string,
     query: ListMessagesDto,
   ): Promise<MessagePage> {
-    const conversation =
-      await this.conversationService.getParticipantOrThrow(
-        conversationId,
-        currentUserId,
-      );
+    const conversation = await this.conversationService.getParticipantOrThrow(
+      conversationId,
+      currentUserId,
+    );
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
     const filter: Record<string, unknown> = {
       conversationId: conversation._id,
