@@ -2,6 +2,7 @@ import { plainToInstance, Type } from 'class-transformer';
 import {
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUrl,
   Max,
@@ -28,6 +29,14 @@ class EnvironmentVariables {
 
   @IsString()
   EUREKA_INSTANCE_HOSTNAME = 'localhost';
+
+  @IsOptional()
+  @IsString()
+  AGORA_APP_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  AGORA_APP_CERTIFICATE?: string;
 }
 
 export function validateEnvironment(config: Record<string, unknown>) {

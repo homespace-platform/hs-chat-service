@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsIn, IsMongoId, IsNotEmpty, IsString, IsUUID } from 'class-validator';
 import type { Server, Socket } from 'socket.io';
 import { UsePipes, ValidationPipe } from '@nestjs/common';
 import {
@@ -12,12 +12,32 @@ import {
   WsException,
 } from '@nestjs/websockets';
 import { ChatMessageService } from '../application/chat-message.service';
+import { ChatConversationService } from '../application/chat-conversation.service';
 import { SendMessageDto } from '../application/dto/send-message.dto';
 
 class SendRealtimeMessageDto extends SendMessageDto {
   @IsString()
   @IsNotEmpty()
   conversationId!: string;
+}
+
+class CallInviteDto {
+  @IsMongoId()
+  conversationId!: string;
+
+  @IsUUID('4')
+  callId!: string;
+
+  @IsIn(['voice', 'video'])
+  mode!: 'voice' | 'video';
+}
+
+class CallEndDto {
+  @IsMongoId()
+  conversationId!: string;
+
+  @IsUUID('4')
+  callId!: string;
 }
 
 // ponytail: one replica uses Socket.IO's in-memory adapter; add Redis before scaling chat horizontally.
@@ -36,7 +56,10 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
   @WebSocketServer()
   private server!: Server;
 
-  constructor(private readonly messageService: ChatMessageService) {}
+  constructor(
+    private readonly messageService: ChatMessageService,
+    private readonly conversationService: ChatConversationService,
+  ) {}
 
   afterInit(server: Server) {
     server.use((socket, next) => {
@@ -77,6 +100,46 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
         error instanceof Error ? error.message : 'Unable to send message',
       );
     }
+  }
+
+  @SubscribeMessage('chat:call:invite')
+  async inviteCall(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() input: CallInviteDto,
+  ) {
+    const userId = socket.data.userId as string | undefined;
+    if (!userId) throw new WsException('Unauthenticated');
+
+    const conversation = await this.conversationService.getParticipantOrThrow(
+      input.conversationId,
+      userId,
+    );
+    const recipientId = conversation.participantIds.find(
+      (participantId) => participantId !== userId,
+    );
+    if (!recipientId) throw new WsException('Call recipient not found');
+
+    const call = { ...input, callerId: userId };
+    this.server.to(this.userRoom(recipientId)).emit('chat:call:incoming', call);
+    return call;
+  }
+
+  @SubscribeMessage('chat:call:end')
+  async endCall(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() input: CallEndDto,
+  ) {
+    const userId = socket.data.userId as string | undefined;
+    if (!userId) throw new WsException('Unauthenticated');
+
+    const conversation = await this.conversationService.getParticipantOrThrow(
+      input.conversationId,
+      userId,
+    );
+    this.server
+      .to(conversation.participantIds.map((id) => this.userRoom(id)))
+      .emit('chat:call:ended', input);
+    return input;
   }
 
   private userRoom(userId: string) {

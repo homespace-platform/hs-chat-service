@@ -10,6 +10,9 @@ npm install
 npm run start:dev
 ```
 
+Để bật gọi thoại/video, tạo project Agora rồi đặt `AGORA_APP_ID` và
+`AGORA_APP_CERTIFICATE` trong `.env.dev`.
+
 Yêu cầu MongoDB tại `localhost:27017` và Eureka tại `localhost:8761`. Chat
 service dùng database riêng `homespace_chat`; có thể drop database này khi
 reset dữ liệu local:
@@ -36,6 +39,7 @@ Controller local dùng prefix `/`; qua Gateway dùng prefix
 | `GET` | `/conversations/:id/messages?limit=50&before=<ISO timestamp>` | Lấy lịch sử tin nhắn |
 | `POST` | `/conversations/:id/messages` | Gửi tin nhắn |
 | `PATCH` | `/conversations/:id/read` | Đánh dấu đã đọc |
+| `POST` | `/conversations/:id/call-token` | Tạo Agora token cho thành viên cuộc trò chuyện |
 
 Tạo conversation:
 

@@ -13,7 +13,9 @@ import type { UserContext } from '../../authentication/domain/user-context';
 import { CurrentUser } from '../../authentication/presentation/decorators/current-user.decorator';
 import { GatewayAuthenticationGuard } from '../../authentication/presentation/guards/gateway-authentication.guard';
 import { ChatConversationService } from '../application/chat-conversation.service';
+import { ChatCallService } from '../application/chat-call.service';
 import { ChatMessageService } from '../application/chat-message.service';
+import { CreateCallTokenDto } from '../application/dto/create-call-token.dto';
 import { CreateConversationDto } from '../application/dto/create-conversation.dto';
 import { ListConversationsDto } from '../application/dto/list-conversations.dto';
 import { ListMessagesDto } from '../application/dto/list-messages.dto';
@@ -26,6 +28,7 @@ export class ChatController {
   constructor(
     private readonly conversationService: ChatConversationService,
     private readonly messageService: ChatMessageService,
+    private readonly callService: ChatCallService,
   ) {}
 
   @Get()
@@ -102,6 +105,20 @@ export class ChatController {
       conversationId,
       user.userId,
       input,
+    );
+    return new ApiResponseDto({ result });
+  }
+
+  @Post(':conversationId/call-token')
+  async callToken(
+    @CurrentUser() user: UserContext,
+    @Param('conversationId') conversationId: string,
+    @Body() input: CreateCallTokenDto,
+  ) {
+    const result = await this.callService.createToken(
+      conversationId,
+      user.userId,
+      input.callId,
     );
     return new ApiResponseDto({ result });
   }
