@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { GatewayAuthenticationGuard } from '../authentication/presentation/guards/gateway-authentication.guard';
 import { ChatConversationService } from './application/chat-conversation.service';
+import { ChatCallService } from './application/chat-call.service';
 import { ChatMessageService } from './application/chat-message.service';
 import { ChatController } from './presentation/chat.controller';
 import { ChatGateway } from './presentation/chat.gateway';
@@ -25,6 +26,7 @@ import {
   providers: [
     GatewayAuthenticationGuard,
     ChatConversationService,
+    ChatCallService,
     ChatMessageService,
     ChatGateway,
   ],
