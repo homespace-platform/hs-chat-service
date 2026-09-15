@@ -45,6 +45,15 @@ export class Message {
   @Prop({ type: [ChatAttachmentSchema], default: [] })
   attachments!: ChatAttachment[];
 
+  @Prop({ type: [String], default: [] })
+  hiddenFor!: string[];
+
+  @Prop({ type: [String], default: [] })
+  pinnedBy!: string[];
+
+  @Prop({ type: Date })
+  recalledAt?: Date;
+
   createdAt!: Date;
 }
 

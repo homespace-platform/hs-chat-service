@@ -1,4 +1,11 @@
-import { IsIn, IsMongoId, IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsMongoId,
+  IsNotEmpty,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import type { Server, Socket } from 'socket.io';
 import { UsePipes, ValidationPipe } from '@nestjs/common';
 import {
@@ -38,6 +45,19 @@ class CallEndDto {
 
   @IsUUID('4')
   callId!: string;
+}
+
+class MessageActionDto {
+  @IsMongoId()
+  conversationId!: string;
+
+  @IsMongoId()
+  messageId!: string;
+}
+
+class PinMessageDto extends MessageActionDto {
+  @IsBoolean()
+  pinned!: boolean;
 }
 
 // ponytail: one replica uses Socket.IO's in-memory adapter; add Redis before scaling chat horizontally.
@@ -100,6 +120,60 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
         error instanceof Error ? error.message : 'Unable to send message',
       );
     }
+  }
+
+  @SubscribeMessage('chat:message:pin')
+  async pinMessage(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() input: PinMessageDto,
+  ) {
+    const userId = socket.data.userId as string | undefined;
+    if (!userId) throw new WsException('Unauthenticated');
+
+    const message = await this.messageService.setPinned(
+      userId,
+      input.conversationId,
+      input.messageId,
+      input.pinned,
+    );
+    this.server.to(this.userRoom(userId)).emit('chat:message:updated', message);
+    return message;
+  }
+
+  @SubscribeMessage('chat:message:delete')
+  async deleteMessage(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() input: MessageActionDto,
+  ) {
+    const userId = socket.data.userId as string | undefined;
+    if (!userId) throw new WsException('Unauthenticated');
+
+    const result = await this.messageService.deleteForUser(
+      userId,
+      input.conversationId,
+      input.messageId,
+    );
+    this.server.to(this.userRoom(userId)).emit('chat:message:deleted', result);
+    return result;
+  }
+
+  @SubscribeMessage('chat:message:recall')
+  async recallMessage(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() input: MessageActionDto,
+  ) {
+    const userId = socket.data.userId as string | undefined;
+    if (!userId) throw new WsException('Unauthenticated');
+
+    const result = await this.messageService.recall(
+      userId,
+      input.conversationId,
+      input.messageId,
+    );
+    this.server
+      .to(result.participantIds.map((id) => this.userRoom(id)))
+      .emit('chat:message:updated', result.message);
+    return result.message;
   }
 
   @SubscribeMessage('chat:call:invite')
