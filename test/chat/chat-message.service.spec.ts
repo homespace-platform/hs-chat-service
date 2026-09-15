@@ -10,6 +10,8 @@ describe('ChatMessageService', () => {
   const messageModel = {
     create: jest.fn(),
     find: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+    updateOne: jest.fn(),
   };
   const conversationModel = {
     updateOne: jest.fn(),
@@ -38,7 +40,10 @@ describe('ChatMessageService', () => {
       content: 'Chào bạn',
       createdAt: new Date('2026-09-03T10:00:00.000Z'),
     });
-    conversationModel.updateOne.mockReturnValue(queryReturning({ acknowledged: true }));
+    conversationModel.updateOne.mockReturnValue(
+      queryReturning({ acknowledged: true }),
+    );
+    messageModel.updateOne.mockReturnValue(queryReturning({ matchedCount: 1 }));
     service = new ChatMessageService(
       messageModel as never,
       conversationModel as never,
@@ -104,5 +109,65 @@ describe('ChatMessageService', () => {
       { $set: { 'unreadCounts.user-a': 0 } },
     );
     expect(result.unreadCount).toBe(0);
+  });
+
+  it('pins per user, deletes only for that user, and recalls only sent messages', async () => {
+    messageModel.findOneAndUpdate
+      .mockReturnValueOnce(
+        queryReturning({
+          _id: 'message-id',
+          conversationId: 'conversation-id',
+          senderId: 'user-a',
+          content: 'Chào bạn',
+          attachments: [],
+          pinnedBy: ['user-a'],
+          createdAt: new Date('2026-09-03T10:00:00.000Z'),
+        }),
+      )
+      .mockReturnValueOnce(
+        queryReturning({
+          _id: 'message-id',
+          conversationId: 'conversation-id',
+          senderId: 'user-a',
+          content: 'Tin nhắn đã được thu hồi',
+          attachments: [],
+          pinnedBy: [],
+          recalledAt: new Date('2026-09-03T10:01:00.000Z'),
+          createdAt: new Date('2026-09-03T10:00:00.000Z'),
+        }),
+      );
+
+    const pinned = await service.setPinned(
+      'user-a',
+      'conversation-id',
+      'message-id',
+      true,
+    );
+    await service.deleteForUser('user-a', 'conversation-id', 'message-id');
+    const recalled = await service.recall(
+      'user-a',
+      'conversation-id',
+      'message-id',
+    );
+
+    expect(pinned.isPinned).toBe(true);
+    expect(messageModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'message-id', conversationId: 'conversation-id' },
+      {
+        $addToSet: { hiddenFor: 'user-a' },
+        $pull: { pinnedBy: 'user-a' },
+      },
+    );
+    expect(recalled.message.isRecalled).toBe(true);
+    expect(recalled.message.content).toBe('Tin nhắn đã được thu hồi');
+    expect(messageModel.findOneAndUpdate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        senderId: 'user-a',
+        createdAt: { $gte: expect.any(Date) },
+      }),
+      expect.anything(),
+      { new: true },
+    );
   });
 });

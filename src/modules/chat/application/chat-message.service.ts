@@ -1,12 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import type { MessagePage, MessageView } from '../domain/chat-views';
 import type { RelatedListingSnapshot } from '../domain/related-listing-snapshot';
 import type { ParticipantProfileSnapshot } from '../domain/participant-profile-snapshot';
-import {
-  Conversation,
-} from '../infrastructure/persistence/schemas/conversation.schema';
+import { Conversation } from '../infrastructure/persistence/schemas/conversation.schema';
 import {
   Message,
   type MessageDocument,
@@ -41,11 +43,10 @@ export class ChatMessageService {
     conversationId: string,
     input: SendMessageDto,
   ): Promise<{ message: MessageView; recipientId: string }> {
-    const conversation =
-      await this.conversationService.getParticipantOrThrow(
-        conversationId,
-        currentUserId,
-      );
+    const conversation = await this.conversationService.getParticipantOrThrow(
+      conversationId,
+      currentUserId,
+    );
     const content = input.content.trim();
     if (!content) {
       throw new BadRequestException('Message content is required');
@@ -89,7 +90,7 @@ export class ChatMessageService {
       )
       .exec();
 
-    return { message: this.toView(created), recipientId };
+    return { message: this.toView(created, currentUserId), recipientId };
   }
 
   async listMessages(
@@ -104,6 +105,7 @@ export class ChatMessageService {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
     const filter: Record<string, unknown> = {
       conversationId: conversation._id,
+      hiddenFor: { $ne: currentUserId },
     };
     if (query.before) {
       const before = new Date(query.before);
@@ -122,22 +124,16 @@ export class ChatMessageService {
     const page = messages.slice(0, limit).reverse();
 
     return {
-      items: page.map((message) => this.toView(message)),
-      nextBefore: hasMore
-        ? page[0]?.createdAt.toISOString()
-        : undefined,
+      items: page.map((message) => this.toView(message, currentUserId)),
+      nextBefore: hasMore ? page[0]?.createdAt.toISOString() : undefined,
     };
   }
 
-  async markRead(
-    currentUserId: string,
-    conversationId: string,
-  ) {
-    const conversation =
-      await this.conversationService.getParticipantOrThrow(
-        conversationId,
-        currentUserId,
-      );
+  async markRead(currentUserId: string, conversationId: string) {
+    const conversation = await this.conversationService.getParticipantOrThrow(
+      conversationId,
+      currentUserId,
+    );
     await this.conversationModel
       .updateOne(
         { _id: conversation._id, participantIds: currentUserId },
@@ -151,7 +147,97 @@ export class ChatMessageService {
     };
   }
 
-  private toView(message: MessageDocument): MessageView {
+  async setPinned(
+    currentUserId: string,
+    conversationId: string,
+    messageId: string,
+    pinned: boolean,
+  ): Promise<MessageView> {
+    const conversation = await this.conversationService.getParticipantOrThrow(
+      conversationId,
+      currentUserId,
+    );
+    const message = await this.messageModel
+      .findOneAndUpdate(
+        {
+          _id: messageId,
+          conversationId: conversation._id,
+          recalledAt: { $exists: false },
+        },
+        pinned
+          ? { $addToSet: { pinnedBy: currentUserId } }
+          : { $pull: { pinnedBy: currentUserId } },
+        { new: true },
+      )
+      .exec();
+    if (!message) throw new NotFoundException('Message not found');
+    return this.toView(message, currentUserId);
+  }
+
+  async deleteForUser(
+    currentUserId: string,
+    conversationId: string,
+    messageId: string,
+  ) {
+    const conversation = await this.conversationService.getParticipantOrThrow(
+      conversationId,
+      currentUserId,
+    );
+    const result = await this.messageModel
+      .updateOne(
+        { _id: messageId, conversationId: conversation._id },
+        {
+          $addToSet: { hiddenFor: currentUserId },
+          $pull: { pinnedBy: currentUserId },
+        },
+      )
+      .exec();
+    if (!result.matchedCount) throw new NotFoundException('Message not found');
+    return { conversationId, messageId };
+  }
+
+  async recall(
+    currentUserId: string,
+    conversationId: string,
+    messageId: string,
+  ) {
+    const conversation = await this.conversationService.getParticipantOrThrow(
+      conversationId,
+      currentUserId,
+    );
+    const message = await this.messageModel
+      .findOneAndUpdate(
+        {
+          _id: messageId,
+          conversationId: conversation._id,
+          senderId: currentUserId,
+          recalledAt: { $exists: false },
+          createdAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) },
+        },
+        {
+          $set: {
+            content: 'Tin nhắn đã được thu hồi',
+            attachments: [],
+            pinnedBy: [],
+            recalledAt: new Date(),
+          },
+          $unset: { listing: 1 },
+        },
+        { new: true },
+      )
+      .exec();
+    if (!message) {
+      throw new NotFoundException(
+        'Message not found, already recalled, or recall window expired',
+      );
+    }
+    return {
+      message: this.toView(message, currentUserId),
+      participantIds: conversation.participantIds,
+    };
+  }
+
+  private toView(message: MessageDocument, currentUserId: string): MessageView {
     return {
       id: message._id.toString(),
       conversationId: message.conversationId.toString(),
@@ -160,6 +246,8 @@ export class ChatMessageService {
       listing: message.listing,
       attachments: message.attachments ?? [],
       createdAt: message.createdAt,
+      isPinned: (message.pinnedBy ?? []).includes(currentUserId),
+      isRecalled: Boolean(message.recalledAt),
     };
   }
 

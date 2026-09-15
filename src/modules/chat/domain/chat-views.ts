@@ -24,6 +24,8 @@ export interface MessageView {
   listing?: RelatedListingSnapshot;
   createdAt: Date;
   attachments: ChatAttachment[];
+  isPinned: boolean;
+  isRecalled: boolean;
 }
 
 export interface MessagePage {
