@@ -1,14 +1,15 @@
 import { NotFoundException } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { ChatMessageService } from '../../src/modules/chat/application/chat-message.service';
+type TestConversation = { _id: string; participantIds: string[]; unreadCounts?: Record<string, number> };
 
 function queryReturning<T>(value: T) {
-  return { exec: jest.fn().mockResolvedValue(value) };
+  return { exec: jest.fn(async () => value) };
 }
 
 describe('ChatMessageService', () => {
   const messageModel = {
-    create: jest.fn(),
+    create: jest.fn<() => Promise<object>>(),
     find: jest.fn(),
     findOneAndUpdate: jest.fn(),
     updateOne: jest.fn(),
@@ -17,17 +18,19 @@ describe('ChatMessageService', () => {
     updateOne: jest.fn(),
   };
   const conversationService = {
-    getParticipantOrThrow: jest.fn(),
-    toView: jest.fn((conversation, userId) => ({
+    getParticipantOrThrow: jest.fn<() => Promise<TestConversation>>(),
+    toView: jest.fn((conversation: TestConversation, userId: string) => ({
       id: conversation._id.toString(),
       participantId: conversation.participantIds.find((id) => id !== userId),
       unreadCount: conversation.unreadCounts?.[userId] ?? 0,
     })),
   };
   let service: ChatMessageService;
+  const media = { resolveAttachments: jest.fn<(...args: unknown[]) => Promise<unknown[]>>() };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    media.resolveAttachments.mockResolvedValue([]);
     conversationService.getParticipantOrThrow.mockResolvedValue({
       _id: 'conversation-id',
       participantIds: ['user-a', 'user-b'],
@@ -48,6 +51,7 @@ describe('ChatMessageService', () => {
       messageModel as never,
       conversationModel as never,
       conversationService as never,
+      media as never,
     );
   });
 
@@ -64,6 +68,18 @@ describe('ChatMessageService', () => {
       expect.objectContaining({ $inc: { 'unreadCounts.user-b': 1 } }),
     );
     expect(result.senderId).toBe('user-a');
+  });
+
+  it('uses validated attachment metadata and refuses attachments before writing messages', async () => {
+    const canonical = { storageId: 'chat_uuid', fileName: 'real.jpg', contentType: 'image/jpeg', sizeBytes: 100 };
+    media.resolveAttachments.mockResolvedValue([canonical]);
+    await service.sendMessage('user-a', 'conversation-id', { content: 'photo', attachments: [{ ...canonical, fileName: 'forged.jpg' }] });
+    expect(media.resolveAttachments).toHaveBeenCalledWith('user-a', 'conversation-id', [expect.objectContaining({ fileName: 'forged.jpg' })]);
+    expect(messageModel.create).toHaveBeenCalledWith(expect.objectContaining({ attachments: [canonical] }));
+    messageModel.create.mockClear();
+    media.resolveAttachments.mockRejectedValue(new Error('attachment forbidden'));
+    await expect(service.sendMessage('user-a', 'conversation-id', { content: 'photo', attachments: [canonical] })).rejects.toThrow('attachment forbidden');
+    expect(messageModel.create).not.toHaveBeenCalled();
   });
 
   it('stores the sender profile so the recipient can render the conversation identity', async () => {
@@ -97,7 +113,7 @@ describe('ChatMessageService', () => {
       new NotFoundException(),
     );
     await expect(
-      service.listMessages('user-c', 'conversation-id', {}),
+      service.listMessages('user-c', 'conversation-id', { limit: 50 }),
     ).rejects.toThrow(NotFoundException);
   });
 

@@ -17,6 +17,7 @@ import { ChatConversationService } from './chat-conversation.service';
 import { ListMessagesDto } from './dto/list-messages.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import type { RelatedListingDto } from './dto/related-listing.dto';
+import { ChatMediaService } from './chat-media.service';
 
 @Injectable()
 export class ChatMessageService {
@@ -26,6 +27,7 @@ export class ChatMessageService {
     @InjectModel(Conversation.name)
     private readonly conversationModel: Model<Conversation>,
     private readonly conversationService: ChatConversationService,
+    private readonly media: ChatMediaService,
   ) {}
 
   async sendMessage(
@@ -59,6 +61,7 @@ export class ChatMessageService {
       throw new BadRequestException('Conversation has no recipient');
     }
 
+    const attachments = await this.media.resolveAttachments(currentUserId, conversationId, input.attachments);
     const created = await this.messageModel.create({
       conversationId: conversation._id,
       senderId: currentUserId,
@@ -66,7 +69,7 @@ export class ChatMessageService {
       listing: input.listing
         ? this.toListingSnapshot(input.listing)
         : undefined,
-      attachments: input.attachments ?? [],
+      attachments,
     });
     const createdAt = created.createdAt ?? new Date();
 

@@ -13,6 +13,19 @@ npm run start:dev
 Để bật gọi thoại/video, tạo project Agora rồi đặt `AGORA_APP_ID` và
 `AGORA_APP_CERTIFICATE` trong `.env.dev`.
 
+Gửi ảnh/file: cấu hình `AWS_REGION`, `AWS_S3_BUCKET`, `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY` bằng key IAM riêng chỉ có quyền `private/chat/*`.
+Xem policy và hướng dẫn tại `../hs-core-api/hs-storage-service/SETUP_S3.md`.
+Bucket phải bật Versioning. Nếu chưa cấu hình S3, chat văn bản vẫn hoạt động.
+Hỗ trợ JPG/PNG/WebP, PDF, DOC/DOCX, tối đa 25 MB/tệp và 5 tệp/tin nhắn.
+File chỉ được gửi sau khi complete, được kiểm tra chủ sở hữu/cuộc trò chuyện;
+URL xem có hạn 5 phút và luôn trỏ đúng S3 Version ID đã lưu.
+Tin nhắn cũ dùng Core Storage vẫn giữ cách xem cũ; file gửi mới do Chat quản lý.
+
+Tên/avatar được Web lấy từ API hồ sơ công khai qua Gateway, cache tối đa 30 giây.
+Cuộc trò chuyện đang mở kiểm tra lại khi chọn, focus tab hoặc mỗi 15 giây khi tab
+hiển thị. Không dùng Kafka để đồng bộ hồ sơ chat.
+
 Yêu cầu MongoDB tại `localhost:27017` và Eureka tại `localhost:8761`. Chat
 service dùng database riêng `homespace_chat`; có thể drop database này khi
 reset dữ liệu local:

@@ -37,6 +37,14 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AGORA_APP_CERTIFICATE?: string;
+
+  @IsOptional()
+  @IsString()
+  AWS_REGION?: string;
+
+  @IsOptional()
+  @IsString()
+  AWS_S3_BUCKET?: string;
 }
 
 export function validateEnvironment(config: Record<string, unknown>) {
