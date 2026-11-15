@@ -54,9 +54,19 @@ export class Message {
   @Prop({ type: Date })
   recalledAt?: Date;
 
+  @Prop({ type: String })
+  pendingNotificationRecipientId?: string;
+
+  @Prop({ type: Date })
+  notificationClaimedUntil?: Date;
+
+  @Prop({ type: Date })
+  notificationPublishedAt?: Date;
+
   createdAt!: Date;
 }
 
 export type MessageDocument = HydratedDocument<Message>;
 export const MessageSchema = SchemaFactory.createForClass(Message);
 MessageSchema.index({ conversationId: 1, createdAt: 1 });
+MessageSchema.index({ pendingNotificationRecipientId: 1, notificationPublishedAt: 1, notificationClaimedUntil: 1 });

@@ -34,6 +34,11 @@ reset dữ liệu local:
 mongosh "mongodb://homespace:homespace123@localhost:27017/?authSource=admin" --eval "db.getSiblingDB('homespace_chat').dropDatabase()"
 ```
 
+Chat gửi yêu cầu thông báo qua Kafka topic `homespace.notification.events.v1`.
+Đặt `KAFKA_BROKERS` (danh sách broker phân cách bằng dấu phẩy, mặc định
+`localhost:9092`). Khi Kafka tạm ngừng, tin nhắn vẫn được lưu và yêu cầu thông
+báo được thử gửi lại từ MongoDB.
+
 ## Endpoint kiểm tra
 
 - Trực tiếp: `GET http://localhost:8082/ping`

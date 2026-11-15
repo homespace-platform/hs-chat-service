@@ -21,6 +21,7 @@ import {
 import { ChatMessageService } from '../application/chat-message.service';
 import { ChatConversationService } from '../application/chat-conversation.service';
 import { SendMessageDto } from '../application/dto/send-message.dto';
+import { ChatMessageBroadcaster } from '../application/chat-message-broadcaster';
 
 class SendRealtimeMessageDto extends SendMessageDto {
   @IsString()
@@ -79,9 +80,11 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
   constructor(
     private readonly messageService: ChatMessageService,
     private readonly conversationService: ChatConversationService,
+    private readonly broadcaster: ChatMessageBroadcaster,
   ) {}
 
   afterInit(server: Server) {
+    this.broadcaster.setServer(server);
     server.use((socket, next) => {
       const value = socket.handshake.headers['x-user-id'];
       const userId = (Array.isArray(value) ? value[0] : value)?.trim();
@@ -105,16 +108,11 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection {
     if (!userId) throw new WsException('Unauthenticated');
 
     try {
-      const { message, recipientId } =
-        await this.messageService.sendRealtimeMessage(
-          userId,
-          input.conversationId,
-          input,
-        );
-      this.server
-        .to([this.userRoom(userId), this.userRoom(recipientId)])
-        .emit('chat:message', message);
-      return message;
+      return await this.messageService.sendMessage(
+        userId,
+        input.conversationId,
+        input,
+      );
     } catch (error) {
       throw new WsException(
         error instanceof Error ? error.message : 'Unable to send message',

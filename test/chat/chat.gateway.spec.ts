@@ -9,7 +9,7 @@ describe('ChatGateway', () => {
 
   it('accepts only users authenticated by the gateway', () => {
     let authenticate!: (socket: never, next: (error?: Error) => void) => void;
-    const gateway = new ChatGateway({} as never, conversationService as never);
+    const gateway = new ChatGateway({} as never, conversationService as never, { setServer: jest.fn() } as never);
     gateway.afterInit({
       use: (middleware: typeof authenticate) => {
         authenticate = middleware;
@@ -39,34 +39,33 @@ describe('ChatGateway', () => {
     expect(rejected.mock.calls[0]?.[0]).toBeInstanceOf(Error);
   });
 
-  it('sends a message to both participant rooms', async () => {
+  it('delegates a socket send once to the shared send path', async () => {
     const message = { id: 'message-id', conversationId: 'conversation-id' };
     const messageService = {
-      sendRealtimeMessage: jest.fn().mockResolvedValue({
-        message,
-        recipientId: 'user-b',
-      }),
+      sendMessage: jest.fn<() => Promise<typeof message>>().mockResolvedValue(message),
     };
     const emit = jest.fn();
     const to = jest.fn(() => ({ emit }));
     const gateway = new ChatGateway(
       messageService as never,
       conversationService as never,
+      { setServer: jest.fn() } as never,
     );
     Object.assign(gateway, { server: { to } });
 
-    await gateway.send({ data: { userId: 'user-a' } } as never, {
+    const result = await gateway.send({ data: { userId: 'user-a' } } as never, {
       conversationId: 'conversation-id',
       content: 'Xin chao',
     });
 
-    expect(messageService.sendRealtimeMessage).toHaveBeenCalledWith(
+    expect(messageService.sendMessage).toHaveBeenCalledWith(
       'user-a',
       'conversation-id',
       { conversationId: 'conversation-id', content: 'Xin chao' },
     );
-    expect(to).toHaveBeenCalledWith(['user:user-a', 'user:user-b']);
-    expect(emit).toHaveBeenCalledWith('chat:message', message);
+    expect(messageService.sendMessage).toHaveBeenCalledTimes(1);
+    expect(result).toBe(message);
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('invites only the other conversation participant', async () => {
@@ -75,7 +74,7 @@ describe('ChatGateway', () => {
     });
     const emit = jest.fn();
     const to = jest.fn(() => ({ emit }));
-    const gateway = new ChatGateway({} as never, conversationService as never);
+    const gateway = new ChatGateway({} as never, conversationService as never, { setServer: jest.fn() } as never);
     Object.assign(gateway, { server: { to } });
     const call = {
       conversationId: '507f1f77bcf86cd799439011',

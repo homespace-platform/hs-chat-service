@@ -6,6 +6,8 @@ import { GatewayAuthenticationGuard } from '../authentication/presentation/guard
 import { ChatConversationService } from './application/chat-conversation.service';
 import { ChatCallService } from './application/chat-call.service';
 import { ChatMessageService } from './application/chat-message.service';
+import { ChatMessageBroadcaster } from './application/chat-message-broadcaster';
+import { ChatNotificationPublisher } from './application/chat-notification-publisher';
 import { ChatController } from './presentation/chat.controller';
 import { ChatGateway } from './presentation/chat.gateway';
 import { ChatMediaService } from './application/chat-media.service';
@@ -37,6 +39,8 @@ import {
     ChatConversationService,
     ChatCallService,
     ChatMessageService,
+    ChatMessageBroadcaster,
+    ChatNotificationPublisher,
     ChatGateway,
     ChatMediaService,
     {

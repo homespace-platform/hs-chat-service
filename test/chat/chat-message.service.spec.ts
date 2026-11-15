@@ -27,6 +27,8 @@ describe('ChatMessageService', () => {
   };
   let service: ChatMessageService;
   const media = { resolveAttachments: jest.fn<(...args: unknown[]) => Promise<unknown[]>>() };
+  const broadcaster = { broadcast: jest.fn() };
+  const notificationPublisher = { wake: jest.fn() };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -40,6 +42,7 @@ describe('ChatMessageService', () => {
       _id: 'message-id',
       conversationId: 'conversation-id',
       senderId: 'user-a',
+      pendingNotificationRecipientId: 'user-b',
       content: 'Chào bạn',
       createdAt: new Date('2026-09-03T10:00:00.000Z'),
     });
@@ -52,6 +55,8 @@ describe('ChatMessageService', () => {
       conversationModel as never,
       conversationService as never,
       media as never,
+      broadcaster as never,
+      notificationPublisher as never,
     );
   });
 
@@ -68,6 +73,20 @@ describe('ChatMessageService', () => {
       expect.objectContaining({ $inc: { 'unreadCounts.user-b': 1 } }),
     );
     expect(result.senderId).toBe('user-a');
+    expect(messageModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      pendingNotificationRecipientId: 'user-b',
+    }));
+    expect(broadcaster.broadcast).toHaveBeenCalledWith(result, 'user-a', 'user-b');
+    expect(notificationPublisher.wake).toHaveBeenCalledTimes(1);
+    expect(result).not.toHaveProperty('pendingNotificationRecipientId');
+  });
+
+  it('does not broadcast when conversation update fails after insert', async () => {
+    conversationModel.updateOne.mockReturnValueOnce({ exec: jest.fn(async () => { throw new Error('update failed'); }) });
+    await expect(service.sendMessage('user-a', 'conversation-id', { content: 'hello' })).rejects.toThrow('update failed');
+    expect(messageModel.create).toHaveBeenCalledWith(expect.objectContaining({ pendingNotificationRecipientId: 'user-b' }));
+    expect(broadcaster.broadcast).not.toHaveBeenCalled();
+    expect(notificationPublisher.wake).not.toHaveBeenCalled();
   });
 
   it('uses validated attachment metadata and refuses attachments before writing messages', async () => {

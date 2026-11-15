@@ -45,6 +45,10 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AWS_S3_BUCKET?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  KAFKA_BROKERS = 'localhost:9092';
 }
 
 export function validateEnvironment(config: Record<string, unknown>) {

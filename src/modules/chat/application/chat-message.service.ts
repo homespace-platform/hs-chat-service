@@ -18,6 +18,8 @@ import { ListMessagesDto } from './dto/list-messages.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import type { RelatedListingDto } from './dto/related-listing.dto';
 import { ChatMediaService } from './chat-media.service';
+import { ChatMessageBroadcaster } from './chat-message-broadcaster';
+import { ChatNotificationPublisher } from './chat-notification-publisher';
 
 @Injectable()
 export class ChatMessageService {
@@ -28,6 +30,8 @@ export class ChatMessageService {
     private readonly conversationModel: Model<Conversation>,
     private readonly conversationService: ChatConversationService,
     private readonly media: ChatMediaService,
+    private readonly broadcaster: ChatMessageBroadcaster,
+    private readonly notificationPublisher: ChatNotificationPublisher,
   ) {}
 
   async sendMessage(
@@ -35,16 +39,6 @@ export class ChatMessageService {
     conversationId: string,
     input: SendMessageDto,
   ): Promise<MessageView> {
-    return (
-      await this.sendRealtimeMessage(currentUserId, conversationId, input)
-    ).message;
-  }
-
-  async sendRealtimeMessage(
-    currentUserId: string,
-    conversationId: string,
-    input: SendMessageDto,
-  ): Promise<{ message: MessageView; recipientId: string }> {
     const conversation = await this.conversationService.getParticipantOrThrow(
       conversationId,
       currentUserId,
@@ -65,6 +59,7 @@ export class ChatMessageService {
     const created = await this.messageModel.create({
       conversationId: conversation._id,
       senderId: currentUserId,
+      pendingNotificationRecipientId: recipientId,
       content,
       listing: input.listing
         ? this.toListingSnapshot(input.listing)
@@ -93,7 +88,10 @@ export class ChatMessageService {
       )
       .exec();
 
-    return { message: this.toView(created, currentUserId), recipientId };
+    const message = this.toView(created, currentUserId);
+    this.broadcaster.broadcast(message, currentUserId, recipientId);
+    this.notificationPublisher.wake();
+    return message;
   }
 
   async listMessages(
