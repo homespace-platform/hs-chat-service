@@ -11,6 +11,7 @@ describe('ChatConversationService', () => {
   const conversationModel = {
     findOne: jest.fn(),
     find: jest.fn(),
+    distinct: jest.fn(),
     create: jest.fn(),
     updateOne: jest.fn(),
   };
@@ -147,5 +148,28 @@ describe('ChatConversationService', () => {
       service.getParticipantOrThrow('not-an-object-id', 'user-a'),
     ).rejects.toThrow(NotFoundException);
     expect(conversationModel.findOne).not.toHaveBeenCalled();
+  });
+
+  it('returns only candidates sharing a conversation with the requester', async () => {
+    conversationModel.distinct.mockReturnValueOnce(
+      queryReturning(['user-a', 'user-b', 'user-x']),
+    );
+
+    const result = await service.findSharedParticipantIds('user-a', [
+      'user-b',
+      'stranger',
+    ]);
+
+    expect(result).toEqual(['user-b']);
+    expect(conversationModel.distinct).toHaveBeenCalledWith(
+      'participantIds',
+      {
+        $and: [
+          { participantIds: 'user-a' },
+          { participantIds: { $in: ['user-b', 'stranger'] } },
+        ],
+      },
+    );
+    await expect(service.findSharedParticipantIds('user-a', [])).resolves.toEqual([]);
   });
 });

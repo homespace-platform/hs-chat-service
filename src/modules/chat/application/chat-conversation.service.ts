@@ -141,6 +141,24 @@ export class ChatConversationService {
     return conversation as ConversationDocument;
   }
 
+  /** Subset of candidateIds that share at least one conversation with currentUserId. */
+  async findSharedParticipantIds(
+    currentUserId: string,
+    candidateIds: string[],
+  ): Promise<string[]> {
+    if (candidateIds.length === 0) return [];
+    const participants: string[] = await this.conversationModel
+      .distinct('participantIds', {
+        $and: [
+          { participantIds: currentUserId },
+          { participantIds: { $in: candidateIds } },
+        ],
+      })
+      .exec();
+    const shared = new Set(participants);
+    return candidateIds.filter((id) => shared.has(id));
+  }
+
   async updateParticipantRole(
     conversationId: string,
     currentUserId: string,
