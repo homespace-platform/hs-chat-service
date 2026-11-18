@@ -78,7 +78,7 @@ export class ChatNotificationPublisher
               ],
             },
             { $set: { notificationClaimedUntil: claimUntil } },
-            { sort: { createdAt: 1 }, new: true },
+            { sort: { createdAt: 1 }, returnDocument: 'after' },
           )
           .exec();
         if (!message) break;

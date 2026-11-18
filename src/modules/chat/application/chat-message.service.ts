@@ -115,6 +115,15 @@ export class ChatMessageService {
       }
       filter.createdAt = { $lt: before };
     }
+    if (query.search?.trim()) {
+      filter.content = {
+        $regex: query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        $options: 'i',
+      };
+    }
+    if (query.media === 'images') {
+      filter['attachments.contentType'] = /^image\//;
+    }
 
     const messages = await this.messageModel
       .find(filter)
@@ -168,7 +177,7 @@ export class ChatMessageService {
         pinned
           ? { $addToSet: { pinnedBy: currentUserId } }
           : { $pull: { pinnedBy: currentUserId } },
-        { new: true },
+        { returnDocument: 'after' },
       )
       .exec();
     if (!message) throw new NotFoundException('Message not found');
@@ -224,7 +233,7 @@ export class ChatMessageService {
           },
           $unset: { listing: 1 },
         },
-        { new: true },
+        { returnDocument: 'after' },
       )
       .exec();
     if (!message) {

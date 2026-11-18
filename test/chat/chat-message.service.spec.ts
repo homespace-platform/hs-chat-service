@@ -1,7 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { ChatMessageService } from '../../src/modules/chat/application/chat-message.service';
-type TestConversation = { _id: string; participantIds: string[]; unreadCounts?: Record<string, number> };
+type TestConversation = {
+  _id: string;
+  participantIds: string[];
+  unreadCounts?: Record<string, number>;
+};
 
 function queryReturning<T>(value: T) {
   return { exec: jest.fn(async () => value) };
@@ -26,7 +30,9 @@ describe('ChatMessageService', () => {
     })),
   };
   let service: ChatMessageService;
-  const media = { resolveAttachments: jest.fn<(...args: unknown[]) => Promise<unknown[]>>() };
+  const media = {
+    resolveAttachments: jest.fn<(...args: unknown[]) => Promise<unknown[]>>(),
+  };
   const broadcaster = { broadcast: jest.fn() };
   const notificationPublisher = { wake: jest.fn() };
 
@@ -73,31 +79,66 @@ describe('ChatMessageService', () => {
       expect.objectContaining({ $inc: { 'unreadCounts.user-b': 1 } }),
     );
     expect(result.senderId).toBe('user-a');
-    expect(messageModel.create).toHaveBeenCalledWith(expect.objectContaining({
-      pendingNotificationRecipientId: 'user-b',
-    }));
-    expect(broadcaster.broadcast).toHaveBeenCalledWith(result, 'user-a', 'user-b');
+    expect(messageModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pendingNotificationRecipientId: 'user-b',
+      }),
+    );
+    expect(broadcaster.broadcast).toHaveBeenCalledWith(
+      result,
+      'user-a',
+      'user-b',
+    );
     expect(notificationPublisher.wake).toHaveBeenCalledTimes(1);
     expect(result).not.toHaveProperty('pendingNotificationRecipientId');
   });
 
   it('does not broadcast when conversation update fails after insert', async () => {
-    conversationModel.updateOne.mockReturnValueOnce({ exec: jest.fn(async () => { throw new Error('update failed'); }) });
-    await expect(service.sendMessage('user-a', 'conversation-id', { content: 'hello' })).rejects.toThrow('update failed');
-    expect(messageModel.create).toHaveBeenCalledWith(expect.objectContaining({ pendingNotificationRecipientId: 'user-b' }));
+    conversationModel.updateOne.mockReturnValueOnce({
+      exec: jest.fn(async () => {
+        throw new Error('update failed');
+      }),
+    });
+    await expect(
+      service.sendMessage('user-a', 'conversation-id', { content: 'hello' }),
+    ).rejects.toThrow('update failed');
+    expect(messageModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({ pendingNotificationRecipientId: 'user-b' }),
+    );
     expect(broadcaster.broadcast).not.toHaveBeenCalled();
     expect(notificationPublisher.wake).not.toHaveBeenCalled();
   });
 
   it('uses validated attachment metadata and refuses attachments before writing messages', async () => {
-    const canonical = { storageId: 'chat_uuid', fileName: 'real.jpg', contentType: 'image/jpeg', sizeBytes: 100 };
+    const canonical = {
+      storageId: 'chat_uuid',
+      fileName: 'real.jpg',
+      contentType: 'image/jpeg',
+      sizeBytes: 100,
+    };
     media.resolveAttachments.mockResolvedValue([canonical]);
-    await service.sendMessage('user-a', 'conversation-id', { content: 'photo', attachments: [{ ...canonical, fileName: 'forged.jpg' }] });
-    expect(media.resolveAttachments).toHaveBeenCalledWith('user-a', 'conversation-id', [expect.objectContaining({ fileName: 'forged.jpg' })]);
-    expect(messageModel.create).toHaveBeenCalledWith(expect.objectContaining({ attachments: [canonical] }));
+    await service.sendMessage('user-a', 'conversation-id', {
+      content: 'photo',
+      attachments: [{ ...canonical, fileName: 'forged.jpg' }],
+    });
+    expect(media.resolveAttachments).toHaveBeenCalledWith(
+      'user-a',
+      'conversation-id',
+      [expect.objectContaining({ fileName: 'forged.jpg' })],
+    );
+    expect(messageModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({ attachments: [canonical] }),
+    );
     messageModel.create.mockClear();
-    media.resolveAttachments.mockRejectedValue(new Error('attachment forbidden'));
-    await expect(service.sendMessage('user-a', 'conversation-id', { content: 'photo', attachments: [canonical] })).rejects.toThrow('attachment forbidden');
+    media.resolveAttachments.mockRejectedValue(
+      new Error('attachment forbidden'),
+    );
+    await expect(
+      service.sendMessage('user-a', 'conversation-id', {
+        content: 'photo',
+        attachments: [canonical],
+      }),
+    ).rejects.toThrow('attachment forbidden');
     expect(messageModel.create).not.toHaveBeenCalled();
   });
 
@@ -134,6 +175,45 @@ describe('ChatMessageService', () => {
     await expect(
       service.listMessages('user-c', 'conversation-id', { limit: 50 }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('filters visible messages by literal text or image within the participant conversation', async () => {
+    const rows = [
+      {
+        _id: 'message-id',
+        conversationId: 'conversation-id',
+        senderId: 'user-a',
+        content: 'photo',
+        attachments: [],
+        createdAt: new Date('2026-09-03T10:00:00.000Z'),
+      },
+    ];
+    const exec = jest.fn(async () => rows);
+    const limit = jest.fn(() => ({ exec }));
+    const sort = jest.fn(() => ({ limit }));
+    messageModel.find.mockReturnValue({ sort });
+
+    await service.listMessages('user-a', 'conversation-id', {
+      limit: 20,
+      search: 'a+b',
+    });
+    expect(messageModel.find).toHaveBeenCalledWith({
+      conversationId: 'conversation-id',
+      hiddenFor: { $ne: 'user-a' },
+      content: { $regex: 'a\\+b', $options: 'i' },
+    });
+    expect(sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(limit).toHaveBeenCalledWith(21);
+
+    await service.listMessages('user-a', 'conversation-id', {
+      limit: 20,
+      media: 'images',
+    });
+    expect(messageModel.find).toHaveBeenLastCalledWith({
+      conversationId: 'conversation-id',
+      hiddenFor: { $ne: 'user-a' },
+      'attachments.contentType': /^image\//,
+    });
   });
 
   it('resets only the current user unread count', async () => {
@@ -202,7 +282,7 @@ describe('ChatMessageService', () => {
         createdAt: { $gte: expect.any(Date) },
       }),
       expect.anything(),
-      { new: true },
+      { returnDocument: 'after' },
     );
   });
 });

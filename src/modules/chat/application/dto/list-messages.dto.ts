@@ -1,5 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class ListMessagesDto {
   @IsOptional()
@@ -12,4 +21,13 @@ export class ListMessagesDto {
   @IsOptional()
   @IsDateString()
   before?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
+
+  @IsOptional()
+  @IsIn(['images'])
+  media?: 'images';
 }
