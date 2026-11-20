@@ -1,0 +1,25 @@
+services:
+    hs-chat-service:
+        image: ${CHAT_IMAGE:?}
+        pull_policy: always
+        restart: unless-stopped
+        mem_limit: 512m
+        environment:
+            PORT: ${PORT:?}
+            SERVICE_NAME: ${SERVICE_NAME:?}
+            MONGODB_URI: ${MONGODB_URI:?}
+            EUREKA_CLIENT_SERVICE_URL: ${EUREKA_CLIENT_SERVICE_URL:?}
+            EUREKA_INSTANCE_HOSTNAME: ${EUREKA_INSTANCE_HOSTNAME:?}
+            AGORA_APP_ID: ${AGORA_APP_ID:?}
+            AGORA_APP_CERTIFICATE: ${AGORA_APP_CERTIFICATE:?}
+            AWS_REGION: ${AWS_REGION:?}
+            AWS_S3_BUCKET: ${AWS_S3_BUCKET:?}
+            AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?}
+            AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?}
+            NODE_ENV: ${NODE_ENV:?}
+            KAFKA_BROKERS: ${KAFKA_BROKERS:?}
+
+networks:
+    default:
+        external: true
+        name: hs-network
