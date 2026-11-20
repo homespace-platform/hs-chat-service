@@ -19,7 +19,7 @@ MongoDB, Kafka, Discovery, Gateway phải chạy trước. Notification Service 
 | `PORT` | `8082` |
 | `SERVICE_NAME` | `hs-chat-service`, đúng tên Gateway khám phá qua Eureka |
 | `MONGODB_URI` | Host `mongodb:27017`, database riêng `homespace_chat`, authSource `admin`; dùng credential infra production |
-| `EUREKA_CLIENT_SERVICE_URL` | `http://homespace-homespacediscovery-mjtjv6:8761/eureka/` |
+| `EUREKA_CLIENT_SERVICE_URL` | `http://hs-discovery-server:8761/eureka/` |
 | `EUREKA_INSTANCE_HOSTNAME` | `localhost`: code tự tìm IPv4 của container để quảng bá cho Gateway |
 | `KAFKA_BROKERS` | `kafka:19092`, listener nội bộ |
 | `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE` | Giữ giá trị cũ cho voice/video calls |
@@ -29,7 +29,7 @@ File env dùng single quote hợp lệ với dotenv; dán nguyên vào Dokploy E
 
 Chat publisher đang dùng topic `homespace.notification.events.v1` trong code; không thêm biến topic không được sử dụng. Topic này phải đã được infra tạo và Notification Service tiêu thụ. Notification không đưa CHAT vào chuông/số chưa đọc của chuông; unread hội thoại do Chat Service quản lý.
 
-Kiểm tra MongoDB có DNS alias `mongodb`, Kafka có alias `kafka` trên `homespace-backend`. Nếu Discovery bị tạo lại, dùng tên service hiện tại từ `sudo docker service ls` để sửa URL. Đổi tên hiển thị Application không tự tạo DNS alias.
+Kiểm tra MongoDB có DNS `mongodb`, Kafka có DNS `kafka`, Discovery Compose có service name `hs-discovery-server` trên `hs-network`. Env dùng `http://hs-discovery-server:8761/eureka/`; DNS lấy từ tên service trong YAML, không phụ thuộc tên container sinh ngẫu nhiên. Đổi tên hiển thị Application không tự tạo DNS alias.
 
 ## 3. Docker Hub và GitHub Actions
 
@@ -59,7 +59,7 @@ Image: **`nvminh162/hs-chat-service:latest`** và tag Git SHA. Không cần Agor
 
 4. Save. Dokploy pull image đã build; không dùng source build/Nixpacks.
 5. Environment → copy nguyên file `.env.dokploy` trên máy → dán → **Save**.
-6. Advanced → Networks → thêm **`homespace-backend`**, giữ **`dokploy-network`** → Save. Nếu UI có Swarm Settings → Network, chọn Target `homespace-backend` tại đó. Nếu mạng không hiện, kiểm tra đúng server và Refresh; không xóa/tạo lại mạng đang dùng.
+6. Advanced → Networks → thêm **`hs-network`**, giữ **`dokploy-network`** → Save. Nếu UI có Swarm Settings → Network, chọn Target `hs-network` tại đó. Nếu mạng không hiện, kiểm tra đúng server và Refresh; không xóa/tạo lại mạng đang dùng.
 7. Replicas: **1**. Chat presence, rooms và call signaling dùng trạng thái trong bộ nhớ; cần shared adapter trước khi scale nhiều replica.
 8. Memory limit khởi đầu **512 MiB** (`536870912` bytes), CPU limit **1** nếu cần; điều chỉnh theo monitoring.
 9. Không tạo domain riêng, không publish port 8082 ra host, không mở port này trong EC2 Security Group. Service tin identity headers đã xác thực từ Gateway, nên mọi truy cập public phải đi qua Gateway.
@@ -81,13 +81,13 @@ Trên EC2:
 
 ```bash
 sudo docker service ls --format '{{.Name}} {{.Replicas}}' | grep -i chat
-curl --fail --silent --show-error --max-time 10 https://homespace-api.nvminh162.id.vn/api/v1/chat/ping
+curl --fail --silent --show-error --max-time 10 https://api.homespace.id.vn/api/v1/chat/ping
 ```
 
 Kết quả `pong`; Eureka có **HS-CHAT-SERVICE — UP**. Gateway có thể cần 30–60 giây để cập nhật registry.
 
 ```bash
-curl --silent --output /dev/null --write-out 'HTTP %{http_code}\n' --max-time 10 https://homespace-api.nvminh162.id.vn/api/v1/chat/conversations
+curl --silent --output /dev/null --write-out 'HTTP %{http_code}\n' --max-time 10 https://api.homespace.id.vn/api/v1/chat/conversations
 ```
 
 Chưa đăng nhập phải trả `401`. Đăng nhập frontend bằng hai tài khoản có cùng cuộc trò chuyện:
