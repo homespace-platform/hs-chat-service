@@ -7,7 +7,7 @@ Luồng: push `master` → GitHub Actions lint/test/build → Docker Hub → Doc
 - `Dockerfile`: Node 24, NestJS build, production dependencies, user `node`, port `8082`, healthcheck `/ping`.
 - `.dockerignore`: chỉ đưa build inputs vào image, loại env/key/credential files.
 - `.github/workflows/publish-image.yml`: lint, unit tests, Docker build; push tag Git SHA và `latest` trên `master`, không publish từ pull request.
-- `.env.dokploy`: file riêng tư, Git ignore. Giữ Agora/S3 credentials từ `.env` hiện tại, chuyển địa chỉ hạ tầng sang production. `.env` local được giữ nguyên.
+- `.env.prod`: file riêng tư, Git ignore. Giữ Agora/S3 credentials từ `.env` hiện tại, chuyển địa chỉ hạ tầng sang production. `.env` local được giữ nguyên.
 - `compose.production.yml`: service `hs-chat-service`, image từ `${CHAT_IMAGE:?}`, memory limit 512 MiB, tự tham gia external `hs-network`. Không có host port hoặc volume; healthcheck kế thừa từ image. Không cần alias hoặc Advanced → Networks.
 
 ## 2. Hạ tầng và env production
@@ -16,7 +16,7 @@ MongoDB, Kafka, Discovery, Gateway phải chạy trước. Notification Service 
 
 | Biến | Giá trị / nguồn |
 | --- | --- |
-| `CHAT_IMAGE` | `nvminh162/hs-chat-service:latest`, đặt ở dòng đầu `.env.dokploy`; chỉ dùng để chọn image |
+| `CHAT_IMAGE` | `nvminh162/hs-chat-service:latest`, đặt ở dòng đầu `.env.prod`; chỉ dùng để chọn image |
 | `NODE_ENV` | `production` |
 | `PORT` | `8082` |
 | `SERVICE_NAME` | `hs-chat-service`, đúng tên Gateway khám phá qua Eureka |
@@ -29,7 +29,7 @@ MongoDB, Kafka, Discovery, Gateway phải chạy trước. Notification Service 
 
 File env dùng single quote hợp lệ với dotenv; dán nguyên vào Dokploy Environment. Không dùng nguyên file này với `docker run --env-file` vì Docker CLI xử lý dấu quote khác dotenv.
 
-Compose yêu cầu biến image và đủ 13 biến runtime trong `.env.dokploy` bằng `${VARIABLE:?}`: thiếu hoặc rỗng sẽ báo lỗi, không có fallback. Giữ nguyên `.env` và `.env.example` của dev; không thêm biến image vào hai file đó.
+Compose yêu cầu biến image và đủ 13 biến runtime trong `.env.prod` bằng `${VARIABLE:?}`: thiếu hoặc rỗng sẽ báo lỗi, không có fallback. Giữ nguyên `.env` và `.env.example` của dev; không thêm biến image vào hai file đó.
 
 Chat publisher đang dùng topic `homespace.notification.events.v1` trong code; không thêm biến topic không được sử dụng. Topic này phải đã được infra tạo và Notification Service tiêu thụ. Notification không đưa CHAT vào chuông/số chưa đọc của chuông; unread hội thoại do Chat Service quản lý.
 
@@ -44,7 +44,7 @@ Kiểm tra local: 60 unit tests pass, Docker build và validation env production
 3. Thêm hoặc cấp quyền dùng org secrets:
    - `DOCKERHUB_USERNAME`: tài khoản có quyền push vào namespace `nvminh162`.
    - `DOCKERHUB_TOKEN`: Docker Hub access token Read & Write.
-4. Review rồi commit/push file deploy lên `master`; `.env.dokploy` không thuộc commit.
+4. Review rồi commit/push file deploy lên `master`; `.env.prod` không thuộc commit.
 5. Actions → **Build and publish Chat Service** → chờ thành công. Có thể dùng Run workflow trên `master` sau khi workflow đã lên GitHub.
 
 Image: **`nvminh162/hs-chat-service:latest`** và tag Git SHA. Không cần Agora/AWS/MongoDB secret trong GitHub Actions, không cần `DOKPLOY_DEPLOY_WEBHOOK` ở GitHub.
@@ -54,7 +54,7 @@ Image: **`nvminh162/hs-chat-service:latest`** và tag Git SHA. Không cần Agor
 1. Nếu đang có Application Chat cũ, lưu lại cấu hình/webhook rồi Stop trước khi chạy Compose mới; không chạy hai bản song song. Không xóa infra hoặc dữ liệu.
 2. Projects → **homespace → production → Create Service → Docker Compose**, tên `hs-chat-service`, cùng server với infra.
 3. General → Provider **Raw**, dán toàn bộ [compose.production.yml](../compose.production.yml), chọn Compose Type **Docker Compose**, không chọn Stack → **Save**. Dokploy pull image đã build, không dùng Nixpacks.
-4. **Environment**: dán đầy đủ `.env.dokploy`, có `CHAT_IMAGE` ở dòng đầu → **Save**. File local không tự cập nhật Dokploy.
+4. **Environment**: dán đầy đủ `.env.prod`, có `CHAT_IMAGE` ở dòng đầu → **Save**. File local không tự cập nhật Dokploy.
 5. **Preview Compose** phải có service `hs-chat-service`, đúng image và default network external `hs-network`. Giữ tắt Isolated Deployment và xác nhận Preview vẫn giữ mạng chung; không cần Advanced → Networks.
 6. Chỉ chạy **một instance**. Chat presence, rooms và call signaling dùng trạng thái trong bộ nhớ; cần shared adapter trước khi scale nhiều replica. Memory limit khởi đầu 512 MiB nằm trong YAML.
 7. **Không thêm domain**, không publish port `8082` ra host. Service tin identity headers đã xác thực từ Gateway, nên mọi truy cập public phải đi qua Gateway.
