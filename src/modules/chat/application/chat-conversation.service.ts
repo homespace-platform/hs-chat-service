@@ -44,28 +44,16 @@ export class ChatConversationService {
     const listingId = input.listing?.id ?? DIRECT_CONVERSATION_LISTING_ID;
     const filter = { participantKey, listingId };
     const existing = await this.conversationModel.findOne(filter).exec();
-    if (existing) {
-      if (input.participantProfile) {
-        const participantProfile = this.toParticipantProfile(
-          input.participantProfile,
-        );
-        await this.conversationModel
-          .updateOne(
-            { _id: existing._id },
-            {
-              $set: {
-                [`participantProfiles.${input.participantId}`]:
-                  participantProfile,
-              },
-            },
-          )
-          .exec();
-        existing.participantProfiles = {
-          ...existing.participantProfiles,
-          [input.participantId]: participantProfile,
-        };
-      }
-      return this.toView(existing, currentUserId);
+    if (existing) return this.reopen(existing, input, currentUserId);
+
+    // A request without a listing must not add a second, empty "direct" thread to a pair that already
+    // talks (that is what showed the same person twice): reuse their most recent conversation instead.
+    if (!input.listing) {
+      const latest = await this.conversationModel
+        .findOne({ participantKey })
+        .sort({ updatedAt: -1 })
+        .exec();
+      if (latest) return this.reopen(latest, input, currentUserId);
     }
 
     try {
@@ -119,9 +107,61 @@ export class ChatConversationService {
       .limit(boundedLimit)
       .exec();
 
-    return conversations.map((conversation) =>
-      this.toView(conversation, currentUserId),
+    // Rows created before the reuse rule above: an empty direct thread next to a real conversation with
+    // the same person is noise. Hidden (not deleted); it still opens by id.
+    const emptyDirect = conversations.filter(
+      (item) =>
+        item.listingId === DIRECT_CONVERSATION_LISTING_ID &&
+        !item.lastMessageAt,
     );
+    let duplicateKeys = new Set<string>();
+    if (emptyDirect.length) {
+      const keys: string[] = await this.conversationModel
+        .distinct('participantKey', {
+          participantKey: {
+            $in: emptyDirect.map((item) => item.participantKey),
+          },
+          listingId: { $ne: DIRECT_CONVERSATION_LISTING_ID },
+        })
+        .exec();
+      duplicateKeys = new Set(keys);
+    }
+
+    return conversations
+      .filter(
+        (item) =>
+          !emptyDirect.includes(item) ||
+          !duplicateKeys.has(item.participantKey),
+      )
+      .map((conversation) => this.toView(conversation, currentUserId));
+  }
+
+  private async reopen(
+    conversation: ConversationDocument,
+    input: CreateConversationDto,
+    currentUserId: string,
+  ): Promise<ConversationView> {
+    if (input.participantProfile) {
+      const participantProfile = this.toParticipantProfile(
+        input.participantProfile,
+      );
+      await this.conversationModel
+        .updateOne(
+          { _id: conversation._id },
+          {
+            $set: {
+              [`participantProfiles.${input.participantId}`]:
+                participantProfile,
+            },
+          },
+        )
+        .exec();
+      conversation.participantProfiles = {
+        ...conversation.participantProfiles,
+        [input.participantId]: participantProfile,
+      };
+    }
+    return this.toView(conversation, currentUserId);
   }
 
   async getParticipantOrThrow(

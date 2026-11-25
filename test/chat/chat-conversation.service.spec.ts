@@ -7,6 +7,11 @@ function queryReturning<T>(value: T) {
   return { exec: jest.fn().mockResolvedValue(value) };
 }
 
+// findOne(...).sort(...).exec(): the "latest conversation of this pair" lookup.
+function sortedQueryReturning<T>(value: T) {
+  return { sort: jest.fn().mockReturnValue(queryReturning(value)) };
+}
+
 describe('ChatConversationService', () => {
   const conversationModel = {
     findOne: jest.fn(),
@@ -24,6 +29,7 @@ describe('ChatConversationService', () => {
 
   it('creates a conversation with sorted participants and a direct listing sentinel', async () => {
     conversationModel.findOne.mockReturnValueOnce(queryReturning(null));
+    conversationModel.findOne.mockReturnValueOnce(sortedQueryReturning(null));
     conversationModel.create.mockResolvedValueOnce({
       _id: 'conversation-id',
       participantIds: ['user-a', 'user-b'],
@@ -46,6 +52,7 @@ describe('ChatConversationService', () => {
 
   it('stores the other participant profile for conversation previews', async () => {
     conversationModel.findOne.mockReturnValueOnce(queryReturning(null));
+    conversationModel.findOne.mockReturnValueOnce(sortedQueryReturning(null));
     conversationModel.create.mockResolvedValueOnce({
       _id: 'conversation-id',
       participantIds: ['user-a', 'user-b'],
@@ -100,6 +107,89 @@ describe('ChatConversationService', () => {
     expect(conversationModel.create).not.toHaveBeenCalled();
     expect(result.id).toBe('conversation-id');
     expect(result.unreadCount).toBe(0);
+  });
+
+  it('reuses the latest conversation of the pair for a request without a listing instead of adding an empty direct one', async () => {
+    conversationModel.findOne.mockReturnValueOnce(queryReturning(null));
+    conversationModel.findOne.mockReturnValueOnce(
+      sortedQueryReturning({
+        _id: 'listing-thread',
+        participantIds: ['user-a', 'user-b'],
+        listingId: 'listing-1',
+        unreadCounts: { 'user-a': 0, 'user-b': 0 },
+        lastMessage: 'xin chào',
+      }),
+    );
+
+    const result = await service.createOrReuseConversation('user-a', {
+      participantId: 'user-b',
+    });
+
+    expect(conversationModel.create).not.toHaveBeenCalled();
+    expect(result.id).toBe('listing-thread');
+  });
+
+  it('still creates a separate thread for a different listing', async () => {
+    conversationModel.findOne.mockReturnValueOnce(queryReturning(null));
+    conversationModel.create.mockResolvedValueOnce({
+      _id: 'listing-2-thread',
+      participantIds: ['user-a', 'user-b'],
+      listingId: 'listing-2',
+      unreadCounts: { 'user-a': 0, 'user-b': 0 },
+    });
+
+    await service.createOrReuseConversation('user-a', {
+      participantId: 'user-b',
+      listing: {
+        id: 'listing-2',
+        title: 'Nhà 2',
+        price: '1',
+        location: 'HCM',
+        image: 'x',
+      },
+    } as never);
+
+    expect(conversationModel.findOne).toHaveBeenCalledTimes(1);
+    expect(conversationModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({ listingId: 'listing-2' }),
+    );
+  });
+
+  it('hides an empty direct thread when the same pair has another conversation, but keeps it otherwise', async () => {
+    const row = (
+      id: string,
+      key: string,
+      listingId: string,
+      lastMessageAt?: Date,
+    ) => ({
+      _id: id,
+      participantIds: key.split(':'),
+      participantKey: key,
+      listingId,
+      lastMessageAt,
+      unreadCounts: {},
+    });
+    const found = [
+      row('real', 'user-a:user-b', 'listing-1', new Date()),
+      row('empty-dup', 'user-a:user-b', DIRECT_CONVERSATION_LISTING_ID),
+      row('empty-alone', 'user-a:user-c', DIRECT_CONVERSATION_LISTING_ID),
+    ];
+    conversationModel.find.mockReturnValueOnce({
+      sort: () => ({ limit: () => queryReturning(found) }),
+    });
+    conversationModel.distinct.mockReturnValueOnce(
+      queryReturning(['user-a:user-b']),
+    );
+
+    const result = await service.listConversations('user-a');
+
+    expect(result.map((item) => item.id)).toEqual(['real', 'empty-alone']);
+    expect(conversationModel.distinct).toHaveBeenCalledWith(
+      'participantKey',
+      expect.objectContaining({
+        listingId: { $ne: DIRECT_CONVERSATION_LISTING_ID },
+      }),
+    );
   });
 
   it('fills a missing participant profile when an existing conversation is reopened', async () => {
@@ -161,15 +251,14 @@ describe('ChatConversationService', () => {
     ]);
 
     expect(result).toEqual(['user-b']);
-    expect(conversationModel.distinct).toHaveBeenCalledWith(
-      'participantIds',
-      {
-        $and: [
-          { participantIds: 'user-a' },
-          { participantIds: { $in: ['user-b', 'stranger'] } },
-        ],
-      },
-    );
-    await expect(service.findSharedParticipantIds('user-a', [])).resolves.toEqual([]);
+    expect(conversationModel.distinct).toHaveBeenCalledWith('participantIds', {
+      $and: [
+        { participantIds: 'user-a' },
+        { participantIds: { $in: ['user-b', 'stranger'] } },
+      ],
+    });
+    await expect(
+      service.findSharedParticipantIds('user-a', []),
+    ).resolves.toEqual([]);
   });
 });
