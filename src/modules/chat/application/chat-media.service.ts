@@ -196,9 +196,11 @@ export class ChatMediaService {
         Bucket: asset.bucketName,
         Key: asset.objectKey,
         VersionId: asset.versionId,
-        ResponseContentDisposition: asset.contentType.startsWith('image/')
-          ? 'inline'
-          : 'attachment',
+        ResponseContentDisposition:
+          asset.contentType.startsWith('image/') ||
+          asset.contentType === 'application/pdf'
+            ? 'inline'
+            : 'attachment',
       }),
       300,
     );

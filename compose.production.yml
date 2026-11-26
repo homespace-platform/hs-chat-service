@@ -18,6 +18,7 @@ services:
             AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?}
             NODE_ENV: ${NODE_ENV:?}
             KAFKA_BROKERS: ${KAFKA_BROKERS:?}
+            KAFKA_CHAT_PROFILE_TOPIC: ${KAFKA_CHAT_PROFILE_TOPIC:?}
 
 networks:
     default:

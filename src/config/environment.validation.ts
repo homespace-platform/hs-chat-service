@@ -49,6 +49,10 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   KAFKA_BROKERS = 'localhost:9092';
+
+  @IsString()
+  @IsNotEmpty()
+  KAFKA_CHAT_PROFILE_TOPIC = 'homespace.user.chat-profile.v1';
 }
 
 export function validateEnvironment(config: Record<string, unknown>) {

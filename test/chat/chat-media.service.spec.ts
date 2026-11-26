@@ -116,6 +116,20 @@ describe('ChatMediaService private storage', () => {
   });
 
   it.each([
+    ['xls', 'application/vnd.ms-excel'],
+    ['xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['ppt', 'application/vnd.ms-powerpoint'],
+    ['pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('presigns %s uploads using the allowed MIME type', async (extension, contentType) => {
+    const result = await service.createUpload('sender', conversationId, {
+      fileName: `file.${extension}`,
+      contentType,
+      size: 100,
+    });
+    expect(new URL(result.uploadUrl).pathname).toMatch(new RegExp(`\\.${extension}$`));
+  });
+
+  it.each([
     { fileName: 'x.html', contentType: 'text/html', size: 100 },
     { fileName: 'x.jpg', contentType: 'toString', size: 100 },
     { fileName: 'x.pdf', contentType: 'application/pdf', size: 0 },
@@ -267,5 +281,14 @@ describe('ChatMediaService private storage', () => {
     expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
     expect(url.searchParams.get('response-content-disposition')).toBe('inline');
     expect(url.pathname).toContain('/private/chat/');
+  });
+
+  it.each([
+    ['application/pdf', 'inline'],
+    ['application/vnd.ms-powerpoint', 'attachment'],
+  ])('selects the signed download disposition for %s', async (contentType, disposition) => {
+    assets.findOne.mockReturnValue(query(asset({ contentType })));
+    const result = await service.getViewUrl('sender', conversationId, storageId);
+    expect(new URL(result.url).searchParams.get('response-content-disposition')).toBe(disposition);
   });
 });

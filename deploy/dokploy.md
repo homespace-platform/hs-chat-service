@@ -24,6 +24,7 @@ MongoDB, Kafka, Discovery, Gateway phải chạy trước. Notification Service 
 | `EUREKA_CLIENT_SERVICE_URL` | `http://hs-discovery-server:8761/eureka/` |
 | `EUREKA_INSTANCE_HOSTNAME` | `hs-chat-service`: DNS từ tên service Compose trên mạng chung |
 | `KAFKA_BROKERS` | `kafka:19092`, listener nội bộ |
+| `KAFKA_CHAT_PROFILE_TOPIC` | `homespace.user.chat-profile.v1`, cùng giá trị với Infra và Core |
 | `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE` | Giữ giá trị cũ cho voice/video calls |
 | `AWS_REGION`, `AWS_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Giữ cấu hình S3 riêng của Chat hiện có |
 

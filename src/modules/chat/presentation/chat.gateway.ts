@@ -8,6 +8,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import type { Server, Socket } from 'socket.io';
 import { UsePipes, ValidationPipe } from '@nestjs/common';
@@ -25,7 +26,8 @@ import {
 import { ChatMessageService } from '../application/chat-message.service';
 import { ChatConversationService } from '../application/chat-conversation.service';
 import { SendMessageDto } from '../application/dto/send-message.dto';
-import { ChatMessageBroadcaster } from '../application/chat-message-broadcaster';
+import { ChatMessageBroadcaster, chatPresenceRoom } from '../application/chat-message-broadcaster';
+import { ChatCallHistoryService } from '../application/chat-call-history.service';
 
 class SendRealtimeMessageDto extends SendMessageDto {
   @IsString()
@@ -42,14 +44,24 @@ class CallInviteDto {
 
   @IsIn(['voice', 'video'])
   mode!: 'voice' | 'video';
+
+  @ValidateIf((_, value) => value !== undefined)
+  @IsIn([1])
+  historyVersion?: 1;
 }
 
-class CallEndDto {
+class CallKeyDto {
   @IsMongoId()
   conversationId!: string;
 
   @IsUUID('4')
   callId!: string;
+}
+
+class CallEndDto extends CallKeyDto {
+  @ValidateIf((_, value) => value !== undefined)
+  @IsIn(['declined', 'failed'])
+  reason?: 'declined' | 'failed';
 }
 
 class MessageActionDto {
@@ -103,6 +115,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly messageService: ChatMessageService,
     private readonly conversationService: ChatConversationService,
     private readonly broadcaster: ChatMessageBroadcaster,
+    private readonly callHistory: ChatCallHistoryService,
   ) {}
 
   afterInit(server: Server) {
@@ -166,7 +179,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       userId,
       [...new Set(input.userIds)],
     );
-    await Promise.all(allowed.map((id) => socket.join(this.presenceRoom(id))));
+    await Promise.all(allowed.map((id) => socket.join(chatPresenceRoom(id))));
     return {
       presences: allowed.map((id) => ({
         userId: id,
@@ -185,7 +198,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     await Promise.all(
       [...new Set(input.userIds)].map((id) =>
-        socket.leave(this.presenceRoom(id)),
+        socket.leave(chatPresenceRoom(id)),
       ),
     );
     return { ok: true };
@@ -266,6 +279,14 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     return result.message;
   }
 
+  @SubscribeMessage('chat:call:history-ready')
+  async registerCallHistory(@ConnectedSocket() socket: Socket) {
+    const userId = socket.data.userId as string | undefined;
+    if (!userId) throw new WsException('Unauthenticated');
+    await socket.join(this.callHistoryRoom(userId));
+    return { ok: true, historyVersion: 1 };
+  }
+
   @SubscribeMessage('chat:call:invite')
   async inviteCall(
     @ConnectedSocket() socket: Socket,
@@ -283,9 +304,49 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     );
     if (!recipientId) throw new WsException('Call recipient not found');
 
-    const call = { ...input, callerId: userId };
-    this.server.to(this.userRoom(recipientId)).emit('chat:call:incoming', call);
+    const { historyVersion, ...invite } = input;
+    const readyRoom = this.callHistoryRoom(recipientId);
+    let tracked = false;
+    if (historyVersion === 1) {
+      const sockets = await this.server
+        .in(this.userRoom(recipientId))
+        .fetchSockets();
+      tracked = sockets.length === 0 ||
+        sockets.some((peer) => peer.rooms.has(readyRoom));
+    }
+    const result = await this.callHistory.invite(
+      invite,
+      userId,
+      recipientId,
+      invite.mode === 'voice' ? 'audio' : 'video',
+      tracked,
+    );
+    const call = {
+      ...invite,
+      callerId: userId,
+      ...(result.tracked && { historyVersion: 1 }),
+    };
+    if (result.relay) {
+      this.server
+        .to(result.tracked ? readyRoom : this.userRoom(recipientId))
+        .emit('chat:call:incoming', call);
+    }
     return call;
+  }
+
+  @SubscribeMessage('chat:call:accept')
+  async acceptCall(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() input: CallKeyDto,
+  ) {
+    const userId = socket.data.userId as string | undefined;
+    if (!userId) throw new WsException('Unauthenticated');
+    await this.conversationService.getParticipantOrThrow(
+      input.conversationId,
+      userId,
+    );
+    await this.callHistory.accept(input, userId);
+    return input;
   }
 
   @SubscribeMessage('chat:call:end')
@@ -300,6 +361,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       input.conversationId,
       userId,
     );
+    if (await this.callHistory.end(input, userId, input.reason)) return input;
     this.server
       .to(conversation.participantIds.map((id) => this.userRoom(id)))
       .emit('chat:call:ended', input);
@@ -310,8 +372,8 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     return `user:${userId}`;
   }
 
-  private presenceRoom(userId: string) {
-    return `presence:${userId}`;
+  private callHistoryRoom(userId: string) {
+    return `call-history:${userId}`;
   }
 
   // Still "online" during the disconnect grace period.
@@ -325,7 +387,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     lastSeenAt: string | null,
   ) {
     this.server
-      .to(this.presenceRoom(userId))
+      .to(chatPresenceRoom(userId))
       .emit('chat:presence', { userId, online, lastSeenAt });
   }
 }

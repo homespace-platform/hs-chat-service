@@ -71,6 +71,7 @@ export class ChatNotificationPublisher
           .findOneAndUpdate(
             {
               pendingNotificationRecipientId: { $exists: true },
+              pendingConversationUpdate: { $exists: false },
               notificationPublishedAt: { $exists: false },
               $or: [
                 { notificationClaimedUntil: { $exists: false } },

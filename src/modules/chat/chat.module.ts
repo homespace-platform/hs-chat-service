@@ -5,9 +5,11 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { GatewayAuthenticationGuard } from '../authentication/presentation/guards/gateway-authentication.guard';
 import { ChatConversationService } from './application/chat-conversation.service';
 import { ChatCallService } from './application/chat-call.service';
+import { ChatCallHistoryService } from './application/chat-call-history.service';
 import { ChatMessageService } from './application/chat-message.service';
 import { ChatMessageBroadcaster } from './application/chat-message-broadcaster';
 import { ChatNotificationPublisher } from './application/chat-notification-publisher';
+import { ChatProfileConsumer } from './application/chat-profile-consumer';
 import { ChatController } from './presentation/chat.controller';
 import { ChatGateway } from './presentation/chat.gateway';
 import { ChatMediaService } from './application/chat-media.service';
@@ -16,6 +18,10 @@ import {
   ChatAsset,
   ChatAssetSchema,
 } from './infrastructure/persistence/schemas/chat-asset.schema';
+import {
+  CallHistory,
+  CallHistorySchema,
+} from './infrastructure/persistence/schemas/call-history.schema';
 import {
   Conversation,
   ConversationSchema,
@@ -31,6 +37,7 @@ import {
       { name: Conversation.name, schema: ConversationSchema },
       { name: Message.name, schema: MessageSchema },
       { name: ChatAsset.name, schema: ChatAssetSchema },
+      { name: CallHistory.name, schema: CallHistorySchema },
     ]),
   ],
   controllers: [ChatController, ChatMediaController],
@@ -38,9 +45,11 @@ import {
     GatewayAuthenticationGuard,
     ChatConversationService,
     ChatCallService,
+    ChatCallHistoryService,
     ChatMessageService,
     ChatMessageBroadcaster,
     ChatNotificationPublisher,
+    ChatProfileConsumer,
     ChatGateway,
     ChatMediaService,
     {

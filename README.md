@@ -77,6 +77,26 @@ Tạo conversation:
 }
 ```
 
+Mỗi cặp người dùng chỉ có **một** conversation duy nhất. `POST /conversations` luôn lấy lại
+conversation đó (chỉ tạo mới nếu cặp chưa có); `listing` chỉ dùng để gán vai trò (người gọi là
+TENANT, người nhận là LANDLORD) khi cặp chưa có vai trò và **không** được lưu vào conversation.
+Thẻ listing nằm trong từng tin nhắn (`listing` của `POST /conversations/:id/messages`).
+Trường `listing` của conversation chỉ còn ở dữ liệu cũ.
+
+### Gộp conversation cũ theo từng listing
+
+Dữ liệu cũ có thể có nhiều conversation cho cùng một cặp. Sao lưu MongoDB trước, chạy dry-run
+(mặc định, chỉ in kế hoạch), rồi mới `--apply`:
+
+```bash
+node --env-file=.env -r ts-node/register scripts/merge-pair-conversations.ts          # dry-run
+node --env-file=.env -r ts-node/register scripts/merge-pair-conversations.ts --apply  # ghi thật
+```
+
+Script đọc `MONGODB_URI`, có thể chạy lại nhiều lần; di chuyển tin nhắn và `chat_assets` trước khi
+xoá conversation thừa, giữ thẻ listing cũ ở tin nhắn đầu tiên, rồi xoá index
+`participantKey_1_listingId_1` và tạo index unique `{ participantKey: 1 }`.
+
 Gửi tin nhắn:
 
 ```json

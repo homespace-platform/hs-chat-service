@@ -10,9 +10,7 @@ import {
   DIRECT_CONVERSATION_LISTING_ID,
 } from './conversation-key';
 import { CreateConversationDto } from './dto/create-conversation.dto';
-import type { RelatedListingDto } from './dto/related-listing.dto';
 import type { ConversationView } from '../domain/chat-views';
-import type { RelatedListingSnapshot } from '../domain/related-listing-snapshot';
 import type { ParticipantProfileSnapshot } from '../domain/participant-profile-snapshot';
 import type { ParticipantRole } from '../domain/participant-role';
 import type { UpdateParticipantRoleDto } from './dto/update-participant-role.dto';
@@ -41,20 +39,14 @@ export class ChatConversationService {
       );
     }
 
-    const listingId = input.listing?.id ?? DIRECT_CONVERSATION_LISTING_ID;
-    const filter = { participantKey, listingId };
-    const existing = await this.conversationModel.findOne(filter).exec();
+    // One conversation per pair of users, forever: the listing is context of a message, not of the
+    // conversation. Legacy duplicates may still exist until the merge script runs; use the most recent.
+    const filter = { participantKey };
+    const existing = await this.conversationModel
+      .findOne(filter)
+      .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .exec();
     if (existing) return this.reopen(existing, input, currentUserId);
-
-    // A request without a listing must not add a second, empty "direct" thread to a pair that already
-    // talks (that is what showed the same person twice): reuse their most recent conversation instead.
-    if (!input.listing) {
-      const latest = await this.conversationModel
-        .findOne({ participantKey })
-        .sort({ updatedAt: -1 })
-        .exec();
-      if (latest) return this.reopen(latest, input, currentUserId);
-    }
 
     try {
       const created = await this.conversationModel.create({
@@ -62,10 +54,8 @@ export class ChatConversationService {
           .map((id) => id.trim())
           .sort(),
         participantKey,
-        listingId,
-        listing: input.listing
-          ? this.toListingSnapshot(input.listing)
-          : undefined,
+        // Constant on purpose: keeps the {participantKey, listingId} unique index guarding concurrent creates.
+        listingId: DIRECT_CONVERSATION_LISTING_ID,
         unreadCounts: {
           [currentUserId]: 0,
           [input.participantId]: 0,
@@ -78,16 +68,16 @@ export class ChatConversationService {
             }
           : {},
         participantRoles: input.listing
-          ? {
-              [currentUserId]: 'TENANT' satisfies ParticipantRole,
-              [input.participantId]: 'LANDLORD' satisfies ParticipantRole,
-            }
+          ? this.listingRoles(currentUserId, input.participantId)
           : {},
       });
       return this.toView(created, currentUserId);
     } catch (error) {
       if (this.isDuplicateKey(error)) {
-        const concurrent = await this.conversationModel.findOne(filter).exec();
+        const concurrent = await this.conversationModel
+          .findOne(filter)
+          .sort({ lastMessageAt: -1, updatedAt: -1 })
+          .exec();
         if (concurrent) {
           return this.toView(concurrent, currentUserId);
         }
@@ -127,11 +117,23 @@ export class ChatConversationService {
       duplicateKeys = new Set(keys);
     }
 
+    // Empty rows next to a conversation with messages for the same pair are noise too (legacy per-listing
+    // threads). Non-empty threads are never hidden: that would hide their messages until the merge script runs.
+    const keysWithMessages = new Set(
+      conversations
+        .filter((item) => item.lastMessageAt)
+        .map((item) => item.participantKey),
+    );
+
     return conversations
       .filter(
         (item) =>
-          !emptyDirect.includes(item) ||
-          !duplicateKeys.has(item.participantKey),
+          !(
+            !item.lastMessageAt &&
+            (keysWithMessages.has(item.participantKey) ||
+              (emptyDirect.includes(item) &&
+                duplicateKeys.has(item.participantKey)))
+          ),
       )
       .map((conversation) => this.toView(conversation, currentUserId));
   }
@@ -141,27 +143,46 @@ export class ChatConversationService {
     input: CreateConversationDto,
     currentUserId: string,
   ): Promise<ConversationView> {
+    const set: Record<string, unknown> = {};
     if (input.participantProfile) {
       const participantProfile = this.toParticipantProfile(
         input.participantProfile,
       );
-      await this.conversationModel
-        .updateOne(
-          { _id: conversation._id },
-          {
-            $set: {
-              [`participantProfiles.${input.participantId}`]:
-                participantProfile,
-            },
-          },
-        )
-        .exec();
+      set[`participantProfiles.${input.participantId}`] = participantProfile;
       conversation.participantProfiles = {
         ...conversation.participantProfiles,
         [input.participantId]: participantProfile,
       };
     }
+    // Roles come from the first listing chat only; never overwrite what a user already chose.
+    const roles = conversation.participantRoles ?? {};
+    if (
+      input.listing &&
+      !roles[currentUserId] &&
+      !roles[input.participantId]
+    ) {
+      const seeded = this.listingRoles(currentUserId, input.participantId);
+      for (const [id, role] of Object.entries(seeded)) {
+        set[`participantRoles.${id}`] = role;
+      }
+      conversation.participantRoles = { ...roles, ...seeded };
+    }
+    if (Object.keys(set).length) {
+      await this.conversationModel
+        .updateOne({ _id: conversation._id }, { $set: set })
+        .exec();
+    }
     return this.toView(conversation, currentUserId);
+  }
+
+  private listingRoles(
+    currentUserId: string,
+    participantId: string,
+  ): Record<string, ParticipantRole> {
+    return {
+      [currentUserId]: 'TENANT',
+      [participantId]: 'LANDLORD',
+    };
   }
 
   async getParticipantOrThrow(
@@ -244,23 +265,11 @@ export class ChatConversationService {
       listing: conversation.listing,
       lastMessage: conversation.lastMessage,
       lastMessageAt: conversation.lastMessageAt,
+      ...(conversation.lastMessageId && {
+        lastMessageId: conversation.lastMessageId.toString(),
+      }),
       lastMessageSenderId: conversation.lastMessageSenderId,
       unreadCount: conversation.unreadCounts?.[currentUserId] ?? 0,
-    };
-  }
-
-  private toListingSnapshot(
-    listing: RelatedListingDto,
-  ): RelatedListingSnapshot {
-    return {
-      id: listing.id.trim(),
-      title: listing.title.trim(),
-      price: listing.price.trim(),
-      location: listing.location.trim(),
-      image: listing.image.trim(),
-      bedrooms: listing.bedrooms,
-      area: listing.area,
-      verified: listing.verified,
     };
   }
 

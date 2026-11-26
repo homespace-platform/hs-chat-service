@@ -74,6 +74,7 @@ describe('ChatNotificationPublisher', () => {
     expect(findOneAndUpdate.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         pendingNotificationRecipientId: { $exists: true },
+        pendingConversationUpdate: { $exists: false },
         notificationPublishedAt: { $exists: false },
       }),
     );

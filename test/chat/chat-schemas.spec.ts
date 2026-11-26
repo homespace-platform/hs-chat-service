@@ -26,4 +26,20 @@ describe('chat schemas', () => {
     expect(Conversation.name).toBe('Conversation');
     expect(Message.name).toBe('Message');
   });
+
+  it('allows empty message text only with valid attachment metadata', async () => {
+    const MessageModel = model('MessageValidation', MessageSchema);
+    const input = { conversationId: new Types.ObjectId(), senderId: 'a', content: '' };
+    await expect(new MessageModel(input).validate()).rejects.toHaveProperty('errors.content');
+    await expect(new MessageModel({
+      ...input,
+      attachments: [{
+        storageId: 'chat_file',
+        fileName: 'slides.pptx',
+        contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        sizeBytes: 100,
+      }],
+    }).validate()).resolves.toBeUndefined();
+  });
 });
+import { model, Types } from 'mongoose';

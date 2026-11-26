@@ -6,10 +6,17 @@ describe('ChatGateway', () => {
   const conversationService = {
     getParticipantOrThrow: jest.fn(),
   };
+  const callHistory = {
+    invite: jest.fn<(key: unknown, callerId: string, calleeId: string, mode: string, tracked: boolean) => Promise<{ tracked: boolean; relay: boolean }>>(
+      async (_key, _callerId, _calleeId, _mode, tracked) => ({ tracked, relay: true }),
+    ),
+    accept: jest.fn<() => Promise<void>>(),
+    end: jest.fn<() => Promise<boolean>>(),
+  };
 
   it('accepts only users authenticated by the gateway', () => {
     let authenticate!: (socket: never, next: (error?: Error) => void) => void;
-    const gateway = new ChatGateway({} as never, conversationService as never, { setServer: jest.fn() } as never);
+    const gateway = new ChatGateway({} as never, conversationService as never, { setServer: jest.fn() } as never, callHistory as never);
     gateway.afterInit({
       use: (middleware: typeof authenticate) => {
         authenticate = middleware;
@@ -51,6 +58,7 @@ describe('ChatGateway', () => {
       messageService as never,
       conversationService as never,
       { setServer: jest.fn() } as never,
+      callHistory as never,
     );
     Object.assign(gateway, { server: { to } });
 
@@ -75,7 +83,7 @@ describe('ChatGateway', () => {
     });
     const emit = jest.fn();
     const to = jest.fn(() => ({ emit }));
-    const gateway = new ChatGateway({} as never, conversationService as never, { setServer: jest.fn() } as never);
+    const gateway = new ChatGateway({} as never, conversationService as never, { setServer: jest.fn() } as never, callHistory as never);
     Object.assign(gateway, { server: { to } });
     const call = {
       conversationId: '507f1f77bcf86cd799439011',
@@ -96,6 +104,62 @@ describe('ChatGateway', () => {
     });
   });
 
+  it.each<[Set<string>[], boolean]>([
+    [[], true],
+    [[new Set(['user:user-b'])], false],
+    [[new Set(['user:user-b', 'call-history:user-b'])], true],
+  ])('negotiates history from connected recipient sockets %j', async (rooms, tracked) => {
+    conversationService.getParticipantOrThrow.mockResolvedValueOnce({
+      participantIds: ['user-a', 'user-b'],
+    });
+    const gateway = new ChatGateway({} as never, conversationService as never, {} as never, callHistory as never);
+    const emit = jest.fn();
+    const to = jest.fn(() => ({ emit }));
+    const fetchSockets = jest.fn(async () => rooms.map((rooms) => ({ rooms })));
+    Object.assign(gateway, { server: { to, in: () => ({ fetchSockets }) } });
+    const join = jest.fn();
+    expect(await gateway.registerCallHistory({ data: { userId: 'user-b' }, join } as never))
+      .toEqual({ ok: true, historyVersion: 1 });
+    expect(join).toHaveBeenCalledWith('call-history:user-b');
+
+    const invite = {
+      conversationId: '507f1f77bcf86cd799439011',
+      callId: '123e4567-e89b-42d3-a456-426614174000',
+      mode: 'voice' as const,
+    };
+    const payload = await gateway.inviteCall({ data: { userId: 'user-a' } } as never, {
+      ...invite,
+      historyVersion: 1,
+    });
+    expect(callHistory.invite).toHaveBeenLastCalledWith(invite, 'user-a', 'user-b', 'audio', tracked);
+    expect(payload).toEqual({ ...invite, callerId: 'user-a', ...(tracked && { historyVersion: 1 }) });
+    expect(to).toHaveBeenCalledWith(tracked ? 'call-history:user-b' : 'user:user-b');
+    expect(emit).toHaveBeenCalledWith('chat:call:incoming', payload);
+  });
+
+  it('relays legacy ends and lets history own tracked end delivery', async () => {
+    const key = {
+      conversationId: '507f1f77bcf86cd799439011',
+      callId: '123e4567-e89b-42d3-a456-426614174000',
+    };
+    conversationService.getParticipantOrThrow
+      .mockResolvedValueOnce({ participantIds: ['user-a', 'user-b'] })
+      .mockResolvedValueOnce({ participantIds: ['user-a', 'user-b'] });
+    callHistory.end.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const gateway = new ChatGateway({} as never, conversationService as never, {} as never, callHistory as never);
+    const emit = jest.fn();
+    const to = jest.fn(() => ({ emit }));
+    Object.assign(gateway, { server: { to } });
+    const socket = { data: { userId: 'user-b' } } as never;
+
+    await gateway.endCall(socket, key);
+    expect(emit).toHaveBeenCalledWith('chat:call:ended', key);
+    const tracked = { ...key, reason: 'declined' } as const;
+    await gateway.endCall(socket, tracked);
+    expect(callHistory.end).toHaveBeenLastCalledWith(tracked, 'user-b', 'declined');
+    expect(emit).toHaveBeenCalledTimes(1);
+  });
+
   describe('presence', () => {
     function setup() {
       const emit = jest.fn();
@@ -103,7 +167,7 @@ describe('ChatGateway', () => {
       const service = {
         findSharedParticipantIds: jest.fn<(u: string, ids: string[]) => Promise<string[]>>(),
       };
-      const gateway = new ChatGateway({} as never, service as never, { setServer: jest.fn() } as never);
+      const gateway = new ChatGateway({} as never, service as never, { setServer: jest.fn() } as never, callHistory as never);
       Object.assign(gateway, { server: { to } });
       const socket = (userId: string) =>
         ({ data: { userId }, join: jest.fn(), leave: jest.fn() }) as never as {

@@ -1,10 +1,12 @@
 import { NotFoundException } from '@nestjs/common';
 import { jest } from '@jest/globals';
+import { Types } from 'mongoose';
 import { ChatMessageService } from '../../src/modules/chat/application/chat-message.service';
 type TestConversation = {
   _id: string;
   participantIds: string[];
   unreadCounts?: Record<string, number>;
+  participantRoles?: Record<string, string>;
 };
 
 function queryReturning<T>(value: T) {
@@ -13,12 +15,14 @@ function queryReturning<T>(value: T) {
 
 describe('ChatMessageService', () => {
   const messageModel = {
-    create: jest.fn<() => Promise<object>>(),
+    create: jest.fn<(input: Record<string, unknown>) => Promise<object>>(),
+    exists: jest.fn(),
     find: jest.fn(),
     findOneAndUpdate: jest.fn(),
     updateOne: jest.fn(),
   };
   const conversationModel = {
+    findOne: jest.fn(),
     updateOne: jest.fn(),
   };
   const conversationService = {
@@ -35,6 +39,14 @@ describe('ChatMessageService', () => {
   };
   const broadcaster = { broadcast: jest.fn() };
   const notificationPublisher = { wake: jest.fn() };
+  const messageId = new Types.ObjectId();
+
+  function previewUpdate() {
+    const pipeline = conversationModel.updateOne.mock.calls.at(-1)?.[1] as [
+      { $set: Record<string, unknown> },
+    ];
+    return pipeline[0].$set;
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,16 +56,20 @@ describe('ChatMessageService', () => {
       participantIds: ['user-a', 'user-b'],
       unreadCounts: { 'user-a': 0, 'user-b': 0 },
     });
-    messageModel.create.mockResolvedValue({
-      _id: 'message-id',
-      conversationId: 'conversation-id',
-      senderId: 'user-a',
-      pendingNotificationRecipientId: 'user-b',
-      content: 'Chào bạn',
-      createdAt: new Date('2026-09-03T10:00:00.000Z'),
+    messageModel.create.mockImplementation(async (input) => {
+      const message = {
+        ...input,
+        _id: messageId,
+        conversationId: 'conversation-id',
+        createdAt: new Date('2026-09-03T10:00:00.000Z'),
+      };
+      messageModel.findOneAndUpdate.mockReturnValue(queryReturning(message));
+      return message;
     });
+    messageModel.findOneAndUpdate.mockReturnValue(queryReturning(null));
+    messageModel.exists.mockReturnValue(queryReturning({ _id: messageId }));
     conversationModel.updateOne.mockReturnValue(
-      queryReturning({ acknowledged: true }),
+      queryReturning({ matchedCount: 1 }),
     );
     messageModel.updateOne.mockReturnValue(queryReturning({ matchedCount: 1 }));
     service = new ChatMessageService(
@@ -75,9 +91,14 @@ describe('ChatMessageService', () => {
       expect.objectContaining({ senderId: 'user-a', content: 'Chào bạn' }),
     );
     expect(conversationModel.updateOne).toHaveBeenCalledWith(
-      { _id: 'conversation-id', participantIds: 'user-a' },
-      expect.objectContaining({ $inc: { 'unreadCounts.user-b': 1 } }),
+      { _id: 'conversation-id', participantIds: { $all: ['user-a', 'user-b'] }, lastAppliedMessageId: null },
+      expect.any(Array),
+      { updatePipeline: true, timestamps: false },
     );
+    expect(previewUpdate()).toHaveProperty(['unreadCounts.user-b', '$add']);
+    expect(previewUpdate().lastMessage).toEqual({
+      $cond: [expect.any(Object), { $literal: 'Chào bạn' }, '$lastMessage'],
+    });
     expect(result.senderId).toBe('user-a');
     expect(messageModel.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -93,20 +114,37 @@ describe('ChatMessageService', () => {
     expect(result).not.toHaveProperty('pendingNotificationRecipientId');
   });
 
-  it('does not broadcast when conversation update fails after insert', async () => {
+  it('acknowledges the saved message and leaves the conversation update available for recovery', async () => {
     conversationModel.updateOne.mockReturnValueOnce({
       exec: jest.fn(async () => {
         throw new Error('update failed');
       }),
     });
-    await expect(
-      service.sendMessage('user-a', 'conversation-id', { content: 'hello' }),
-    ).rejects.toThrow('update failed');
+    const message = await service.sendMessage('user-a', 'conversation-id', { content: 'hello' });
+    expect(message.id).toBe(messageId.toString());
     expect(messageModel.create).toHaveBeenCalledWith(
-      expect.objectContaining({ pendingNotificationRecipientId: 'user-b' }),
+      expect.objectContaining({
+        pendingNotificationRecipientId: 'user-b',
+        pendingConversationUpdate: expect.objectContaining({ recipientId: 'user-b', preview: 'hello' }),
+      }),
     );
+    expect(messageModel.findOneAndUpdate).not.toHaveBeenCalled();
     expect(broadcaster.broadcast).not.toHaveBeenCalled();
     expect(notificationPublisher.wake).not.toHaveBeenCalled();
+  });
+
+  it('finishes an already applied update without incrementing the unread count again', async () => {
+    conversationModel.updateOne.mockReturnValueOnce(queryReturning({ matchedCount: 0 }));
+    conversationModel.findOne.mockReturnValue(queryReturning({ lastAppliedMessageId: messageId }));
+
+    await service.sendMessage('user-a', 'conversation-id', { content: 'hello' });
+
+    expect(conversationModel.updateOne).toHaveBeenCalledTimes(1);
+    expect(messageModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: messageId, conversationId: 'conversation-id', pendingConversationUpdate: { $exists: true } },
+      { $unset: { pendingConversationUpdate: 1 } },
+      { returnDocument: 'before' },
+    );
   });
 
   it('uses validated attachment metadata and refuses attachments before writing messages', async () => {
@@ -118,7 +156,6 @@ describe('ChatMessageService', () => {
     };
     media.resolveAttachments.mockResolvedValue([canonical]);
     await service.sendMessage('user-a', 'conversation-id', {
-      content: 'photo',
       attachments: [{ ...canonical, fileName: 'forged.jpg' }],
     });
     expect(media.resolveAttachments).toHaveBeenCalledWith(
@@ -127,19 +164,52 @@ describe('ChatMessageService', () => {
       [expect.objectContaining({ fileName: 'forged.jpg' })],
     );
     expect(messageModel.create).toHaveBeenCalledWith(
-      expect.objectContaining({ attachments: [canonical] }),
+      expect.objectContaining({ content: '', attachments: [canonical] }),
     );
+    expect(previewUpdate().lastMessage).toEqual({
+      $cond: [expect.any(Object), { $literal: 'real.jpg' }, '$lastMessage'],
+    });
     messageModel.create.mockClear();
     media.resolveAttachments.mockRejectedValue(
       new Error('attachment forbidden'),
     );
     await expect(
       service.sendMessage('user-a', 'conversation-id', {
-        content: 'photo',
+        content: '',
         attachments: [canonical],
       }),
     ).rejects.toThrow('attachment forbidden');
     expect(messageModel.create).not.toHaveBeenCalled();
+  });
+
+  it('upserts call history with a stable message ID and broadcasts the standard view', async () => {
+    const call = {
+      callId: 'call-id',
+      callerId: 'user-a',
+      mode: 'audio',
+      status: 'missed',
+    } as const;
+    const createdAt = new Date('2026-11-25T05:00:45.000Z');
+    const row = {
+      _id: 'call-message-id',
+      conversationId: 'conversation-id',
+      senderId: 'user-a',
+      content: 'Cuộc gọi nhỡ',
+      call,
+      createdAt,
+    };
+    messageModel.findOneAndUpdate.mockReturnValue(queryReturning(row));
+    await service.publishCall(row._id as never, row.conversationId as never, 'user-b', call, createdAt);
+    expect(messageModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: row._id },
+      { $setOnInsert: expect.objectContaining({ call, createdAt }) },
+      expect.objectContaining({ upsert: true, overwriteImmutable: true }),
+    );
+    expect(broadcaster.broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ id: row._id, content: row.content, call }),
+      'user-a',
+      'user-b',
+    );
   });
 
   it('stores the sender profile so the recipient can render the conversation identity', async () => {
@@ -151,17 +221,39 @@ describe('ChatMessageService', () => {
       },
     });
 
-    expect(conversationModel.updateOne).toHaveBeenCalledWith(
-      { _id: 'conversation-id', participantIds: 'user-a' },
-      expect.objectContaining({
-        $set: expect.objectContaining({
-          'participantProfiles.user-a': {
-            displayName: 'Người thuê A',
-            avatarUrl: 'https://example.com/tenant.jpg',
-          },
-        }),
-      }),
-    );
+    expect(previewUpdate()['participantProfiles.user-a']).toEqual({
+      $literal: {
+        displayName: 'Người thuê A',
+        avatarUrl: 'https://example.com/tenant.jpg',
+      },
+    });
+  });
+
+  it('seeds roles from the first listing message and never overwrites them', async () => {
+    const listing = {
+      id: 'listing-id',
+      title: 'Nhà',
+      price: '14.000.000 ₫',
+      location: 'Gò Vấp',
+      image: '',
+    };
+    await service.sendMessage('user-a', 'conversation-id', { content: 'hi' });
+    expect(previewUpdate()).not.toHaveProperty(['participantRoles.user-a']);
+
+    await service.sendMessage('user-a', 'conversation-id', {
+      content: 'hi',
+      listing,
+    });
+    const noRoles = {
+      $and: [
+        { $eq: [{ $ifNull: ['$participantRoles.user-a', null] }, null] },
+        { $eq: [{ $ifNull: ['$participantRoles.user-b', null] }, null] },
+      ],
+    };
+    expect(previewUpdate()).toMatchObject({
+      'participantRoles.user-a': { $cond: [noRoles, 'TENANT', '$participantRoles.user-a'] },
+      'participantRoles.user-b': { $cond: [noRoles, 'LANDLORD', '$participantRoles.user-b'] },
+    });
   });
 
   it('rejects empty content and blocks non-participants', async () => {
@@ -221,7 +313,10 @@ describe('ChatMessageService', () => {
 
     expect(conversationModel.updateOne).toHaveBeenCalledWith(
       { _id: 'conversation-id', participantIds: 'user-a' },
-      { $set: { 'unreadCounts.user-a': 0 } },
+      {
+        $set: { 'unreadCounts.user-a': 0 },
+        $currentDate: { 'lastReadAt.user-a': true },
+      },
     );
     expect(result.unreadCount).toBe(0);
   });

@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Schema as MongooseSchema } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import { DIRECT_CONVERSATION_LISTING_ID } from '../../../application/conversation-key';
 import type { RelatedListingSnapshot } from '../../../domain/related-listing-snapshot';
 import type { ParticipantProfileSnapshot } from '../../../domain/participant-profile-snapshot';
@@ -42,8 +42,17 @@ export class Conversation {
   @Prop()
   lastMessageSenderId?: string;
 
+  @Prop({ type: MongooseSchema.Types.ObjectId })
+  lastMessageId?: Types.ObjectId;
+
+  @Prop({ type: MongooseSchema.Types.ObjectId })
+  lastAppliedMessageId?: Types.ObjectId;
+
   @Prop({ type: Object, default: {} })
   unreadCounts!: Record<string, number>;
+
+  @Prop({ type: Object })
+  lastReadAt?: Record<string, Date>;
 
   @Prop({ type: Object, default: {} })
   participantProfiles!: Record<string, ParticipantProfileSnapshot>;

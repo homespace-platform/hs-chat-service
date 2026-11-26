@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 import {
   ParticipantProfileDto,
   RelatedListingDto,
@@ -7,10 +13,10 @@ import {
 import { MessageAttachmentDto } from './message-attachment.dto';
 
 export class SendMessageDto {
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
-  @IsNotEmpty()
   @MaxLength(5_000)
-  content!: string;
+  content?: string;
 
   @IsOptional()
   @ValidateNested()
