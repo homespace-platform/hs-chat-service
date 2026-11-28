@@ -1,3 +1,4 @@
+import { HealthCheckService, MongooseHealthIndicator } from '@nestjs/terminus';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -16,6 +17,8 @@ describe('AppController (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [HealthController, AuthenticationController, ChatController],
       providers: [
+        { provide: HealthCheckService, useValue: {} },
+        { provide: MongooseHealthIndicator, useValue: {} },
         GatewayAuthenticationGuard,
         {
           provide: ChatConversationService,
